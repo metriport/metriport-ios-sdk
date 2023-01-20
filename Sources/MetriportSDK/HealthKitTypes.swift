@@ -73,7 +73,9 @@ struct HealthKitTypes {
         HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic)!,
         HKObjectType.quantityType(forIdentifier: .bloodPressureDiastolic)!,
         HKObjectType.quantityType(forIdentifier: .respiratoryRate)!,
-        HKSampleType.quantityType(forIdentifier: .vo2Max)!
+        HKObjectType.quantityType(forIdentifier: .vo2Max)!,
+        HKObjectType.quantityType(forIdentifier: .oxygenSaturation)!,
+        HKObjectType.quantityType(forIdentifier: .bloodGlucose)!
     ]
     
     init() {
@@ -107,12 +109,18 @@ struct HealthKitTypes {
             HKObjectType.quantityType(forIdentifier: .bodyMass)!:
             return .gramUnit(with: .kilo)
             
-            // VITALS
+            // BIOMETRICS
         case
             HKSampleType.quantityType(forIdentifier: .heartRate)!,
             HKSampleType.quantityType(forIdentifier: .respiratoryRate)!,
             HKSampleType.quantityType(forIdentifier: .restingHeartRate)!:
             return .count().unitDivided(by: .minute())
+            
+        case HKSampleType.quantityType(forIdentifier: .oxygenSaturation)!:
+            return .percent()
+            
+        case HKSampleType.quantityType(forIdentifier: .bloodGlucose)!:
+            return .moleUnit(with: .milli, molarMass: HKUnitMolarMassBloodGlucose).unitDivided(by: .liter())
             
         case HKSampleType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!:
             return .secondUnit(with: .milli)
