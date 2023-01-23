@@ -11,22 +11,50 @@ protocol WebViewHandlerDelegate {
     func receivedJsonValueFromWebView(value: [String: Any?])
 }
 
+public enum ColorMode {
+    case light, dark
+}
+
 public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
     var healthStore: MetriportHealthStoreManager;
     private let healthKitTypes = HealthKitTypes()
-
+    
     var url: String
     private var webView: WKWebView?
     
-    public init(url: String, healthStore: MetriportHealthStoreManager) {
-        let config = WKWebViewConfiguration()
-        
-        let webView = WKWebView(frame: .zero, configuration: config)
-        
-        self.webView = webView
-        self.url = url
-        self.healthStore = healthStore
-    }
+    public init(
+        healthStore: MetriportHealthStoreManager,
+        token: String,
+        sandbox: Bool,
+        colorMode: ColorMode? = nil,
+        customColor: String? = nil,
+        providers: [String]? = nil,
+        url: String? = nil) {
+            let config = WKWebViewConfiguration()
+            
+            let webView = WKWebView(frame: .zero, configuration: config)
+            
+            self.webView = webView
+            var url = url ?? "https://connect.metriport.com"
+            url = "\(url)?token=\(token)"
+            url = sandbox ? "\(url)&sandbox=true" : url;
+            let colorMode = colorMode ?? .light;
+            switch colorMode {
+            case .light:
+                url = "\(url)&colorMode=light"
+            case .dark:
+                url = "\(url)&colorMode=dark"
+            }
+            if customColor != nil && !customColor!.isEmpty {
+                url = "\(url)&customColor=\(customColor!)";
+            }
+            if providers != nil && !providers!.isEmpty {
+                let providersStr = providers.map{$0}!.joined(separator: ",")
+                url = "\(url)&providers=\(providersStr)";
+            }
+            self.url = url;
+            self.healthStore = healthStore
+        }
     
     // Received messages from webview
     public func receivedJsonValueFromWebView(value: [String : Any?]) {
@@ -60,7 +88,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
         
         return webView!
     }
-
+    
     public func updateUIView(_ webView: WKWebView, context: Context) {
         let request = URLRequest(url: URL(string: "\(url)&apple=true")!)
         webView.load(request)
@@ -70,11 +98,11 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
     public func goBack(){
         webView?.goBack()
     }
-
+    
     public func goForward(){
         webView?.goForward()
     }
-
+    
     public func refresh() {
         webView?.reload()
     }
@@ -87,7 +115,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
         deinit {
             callbackValueFromNative?.cancel()
         }
-                
+        
         init(_ uiWebView: MetriportWidget) {
             self.parent = uiWebView
             self.delegate = parent
