@@ -4,7 +4,7 @@ A Swift Library for access to Apple Healthkit.
 
 ## Installation
 
-To add a package dependency to your Xcode project, select File > Swift Packages > Add Package Dependency and enter `https://github.com/metriport/metriport-ios-sdk`. For more reference visit apple's [docs here.](https://developer.apple.com/documentation/xcode/adding-package-dependencies-to-your-app)
+To add a package dependency to your Xcode project, select File > Swift Packages > Add Package Dependency and enter `https://github.com/metriport/metriport-ios-sdk`. For reference check out [Apple's developer documentation](https://developer.apple.com/documentation/xcode/adding-package-dependencies-to-your-app)
 
 #### Setup
 
