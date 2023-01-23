@@ -10,8 +10,10 @@ public class MetriportHealthStoreManager {
     private let healthKitTypes = HealthKitTypes()
     private var metriportUserId = ""
 
-    public init(clientApiKey: String, apiUrl: String? = nil) {
-        self.metriportClient = MetriportClient(healthStore: healthStore, clientApiKey: clientApiKey, apiUrl: apiUrl)
+    public init(clientApiKey: String,  sandbox: Bool, apiUrl: String? = nil) {
+        var url = sandbox ? "https://api.sandbox.metriport.com" : "https://api.metriport.com"
+        url = apiUrl ?? url
+        self.metriportClient = MetriportClient(healthStore: healthStore, clientApiKey: clientApiKey, apiUrl: url)
 
         
         // If we've already authorized then start checking background updates on app load
