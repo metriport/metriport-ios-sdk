@@ -1,4 +1,4 @@
-# Metriport-IOS
+# Metriport-iOS-SDK
 
 A Swift Library for access to Apple Healthkit.
 
