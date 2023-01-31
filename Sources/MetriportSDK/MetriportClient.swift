@@ -121,9 +121,9 @@ public class MetriportClient {
         for sampleType in cumalativeTypes {
             group.enter()
 
-//           if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
+           if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
                fetchHistoricalData(type: sampleType, queryOption: .cumulativeSum, interval: interval, group: group)
-//           }
+           }
             
             fetchHourly(type: sampleType, queryOption: .cumulativeSum, metriportUserId: metriportUserId)
         }
@@ -131,9 +131,9 @@ public class MetriportClient {
         for sampleType in discreteTypes {
             group.enter()
             
-//            if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
+            if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
                 fetchHistoricalData(type: sampleType, queryOption: .discreteAverage, interval: interval, group: group)
-//            }
+            }
             
             fetchHourly(type: sampleType, queryOption: .discreteAverage, metriportUserId: metriportUserId)
         }
@@ -366,7 +366,6 @@ public class MetriportClient {
 
             let query = HKAnchoredObjectQuery(type: sleepType, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
                 guard let samples = samplesOrNil else {
-                    // Properly handle the error.
                     return
                 }
 
@@ -379,7 +378,6 @@ public class MetriportClient {
             
             query.updateHandler = { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) in
                 guard let samples = samplesOrNil else {
-                    // Properly handle the error.
                     return
                 }
                                 
