@@ -4,6 +4,15 @@ import Combine
 import CoreData
 import WebKit
 
+class MySleepData: ObservableObject {
+    var sleepData: [Sample] = []
+    
+    public func addSample(startTime: Date, endTime: Date, type: String, value: Int) {
+        let sample = Sample(date: startTime,value: value, type: type, endDate: endTime)
+        self.sleepData.append(sample)
+    }
+}
+
 class MyDailyData: ObservableObject {
     var dailyData: [Sample] = []
 
@@ -16,6 +25,8 @@ class MyDailyData: ObservableObject {
 struct Sample: Codable {
     var date: Date
     var value: Int
+    var type: String?
+    var endDate: Date?
 }
 
 public class MetriportClient {
@@ -32,41 +43,9 @@ public class MetriportClient {
     public func checkBackgroundUpdates(metriportUserId: String, sampleTypes: [HKSampleType]) {
         enableBackgroundDelivery(for: sampleTypes)
         fetchDataForAllTypes(metriportUserId: metriportUserId)
-//        sleepTime()
 //        workouts()
     }
-
-    // TODO: ALL IT GIVES ME IS IN BED RIGHT NOW (REM, DEEP AND LIGHT ARE A PART OF IOS 16 AND BEYOND)
-//    func sleepTime() {
-//        print("started")
-//        let healthStore = HKHealthStore()
-//        // startDate and endDate are NSDate objects
-//        // first, we define the object type we want
-//        if let sleepType = HKObjectType.categoryType(forIdentifier: HKCategoryTypeIdentifier.sleepAnalysis) {
-//            // You may want to use a predicate to filter the data... startDate and endDate are NSDate objects corresponding to the time range that you want to retrieve
-//            //let predicate = HKQuery.predicateForSamplesWithStartDate(startDate,endDate: endDate ,options: .None)
-//            // Get the recent data first
-//            let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
-//            // the block completion to execute
-//            let query = HKSampleQuery(sampleType: sleepType, predicate: nil, limit: 100000, sortDescriptors: [sortDescriptor]) { (query, tmpResult, error) -> Void in
-//                if error != nil {
-//                    print(error)
-//                    // Handle the error in your app gracefully
-//                    return
-//                }
-//                if let result = tmpResult {
-//                    for item in result {
-//                        if let sample = item as? HKCategorySample {
-//                            let value = (sample.value == HKCategoryValueSleepAnalysis.inBed.rawValue) ? "InBed" : "Asleep"
-//                            print("Healthkit sleep: \(sample.startDate) \(sample.endDate) - value: \(value)")
-//                        }
-//                    }
-//                }
-//            }
-//
-//            healthStore.execute(query)
-//        }
-//    }
+    
 
     // TODO: AGGREGATE WORKOUT DATA
     // ITS A QUERY WITHIN A QUERY IF I WANT TO BE ABLE TO ACCESS HEART RATE, RESPITORY RATE ETC. DURING WORKOUT
@@ -95,6 +74,14 @@ public class MetriportClient {
 //                          print(workout.startDate)
 //                          print(workout.duration)
 //                          print(workout.workoutActivityType.rawValue)
+//
+//                          if #available(iOS 16.0, *) {
+//                              print(workout.allStatistics.values)
+//                              print(workout.statistics(for: HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!))
+//                              print(workout.statistics(for: HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!)?.sources)
+//
+////                              print(workout.)
+//                          }
 //                          print("")
 //                      }
 //                  }
@@ -134,9 +121,9 @@ public class MetriportClient {
         for sampleType in cumalativeTypes {
             group.enter()
 
-           if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
+//           if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
                fetchHistoricalData(type: sampleType, queryOption: .cumulativeSum, interval: interval, group: group)
-           }
+//           }
             
             fetchHourly(type: sampleType, queryOption: .cumulativeSum, metriportUserId: metriportUserId)
         }
@@ -144,12 +131,15 @@ public class MetriportClient {
         for sampleType in discreteTypes {
             group.enter()
             
-            if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
+//            if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
                 fetchHistoricalData(type: sampleType, queryOption: .discreteAverage, interval: interval, group: group)
-            }
+//            }
             
             fetchHourly(type: sampleType, queryOption: .discreteAverage, metriportUserId: metriportUserId)
         }
+        
+        group.enter()
+        fetchSleep(metriportUserId: metriportUserId, group: group)
 
         group.notify(queue: .main) {
             if self.thirtyDaySamples.count != 0 {
@@ -344,13 +334,99 @@ public class MetriportClient {
         return statistics.averageQuantity()
     }
 
-    private func setLocalKeyValue(key: String, val: Date) {
+    private func setLocalKeyValue(key: String, val: Any) {
         do {
-            let data : Data = try NSKeyedArchiver.archivedData(withRootObject: val as Any, requiringSecureCoding: false)
+            let data : Data = try NSKeyedArchiver.archivedData(withRootObject: val, requiringSecureCoding: false)
             UserDefaults.standard.set(data, forKey: key)
         } catch {
             print("Couldnt write files")
         }
     }
+    
+    func fetchSleep(metriportUserId: String, group: DispatchGroup) {
+        if let sleepType = HKObjectType.categoryType(forIdentifier: HKCategoryTypeIdentifier.sleepAnalysis) {
+            let calendar = Calendar.current
+            let endDate = Date()
+            let oneMonthAgo = DateComponents(day: -30)
+            guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
+                fatalError("*** Unable to calculate the start date ***")
+            }
+            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
+            
+            var anchor = HKQueryAnchor.init(fromValue: 0)
+            
+            if UserDefaults.standard.object(forKey: "sleepAnchor") != nil {
+                let data = UserDefaults.standard.object(forKey: "sleepAnchor") as! Data
+                do {
+                    anchor = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data) as! HKQueryAnchor
+                } catch {
+                    print("Unable to retrieve an anchor")
+                }
+            }
+
+            let query = HKAnchoredObjectQuery(type: sleepType, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
+                guard let samples = samplesOrNil else {
+                    // Properly handle the error.
+                    return
+                }
+
+                let sleepData = self.getSleepData(samples: samples)
+                
+                self.setLocalKeyValue(key: "sleepAnchor", val: newAnchor!)
+                self.thirtyDaySamples["HKCategoryValueSleepAnalysis"] = sleepData.sleepData
+                group.leave()
+            }
+            
+            query.updateHandler = { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) in
+                guard let samples = samplesOrNil else {
+                    // Properly handle the error.
+                    return
+                }
+                                
+                let sleepData = self.getSleepData(samples: samples)
+                self.setLocalKeyValue(key: "sleepAnchor", val: newAnchor!)
+                self.metriportApi.sendData(metriportUserId: metriportUserId, samples: ["HKCategoryValueSleepAnalysis" : sleepData.sleepData])
+            }
+            
+            healthStore.execute(query)
+        }
+    }
+    
+    func getSleepData(samples: [Any]) -> MySleepData {
+        let sleepData = MySleepData()
+        
+        for item in samples {
+            if let sample = item as? HKCategorySample {
+                switch sample.value {
+                    case HKCategoryValueSleepAnalysis.inBed.rawValue:
+                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: Int(sample.endDate - sample.startDate))
+                    case HKCategoryValueSleepAnalysis.awake.rawValue:
+                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: Int(sample.endDate - sample.startDate))
+                    default:
+                        print("")
+                }
+                
+                if #available(iOS 16.0, *) {
+                    switch sample.value {
+                        case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: Int(sample.endDate - sample.startDate))
+                        case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: Int(sample.endDate - sample.startDate))
+                        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: Int(sample.endDate - sample.startDate))
+                        default:
+                            print("")
+                    }
+                }
+            }
+        }
+        
+        return sleepData
+    }
 }
 
+extension Date {
+    static func - (lhs: Date, rhs: Date) -> TimeInterval {
+        return lhs.timeIntervalSinceReferenceDate - rhs.timeIntervalSinceReferenceDate
+    }
+}
