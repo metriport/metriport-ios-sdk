@@ -4,6 +4,31 @@ import Combine
 import CoreData
 import WebKit
 
+class MyWorkoutData: ObservableObject {
+    var workoutData: [WorkoutSample] = []
+    
+    public func addWorkout(startTime: Date, endTime: Date, type: Int, duration: Int, kcal: Int?, distance: Int?) {
+        let sample = WorkoutSample(
+            startTime: startTime,
+            endTime: endTime,
+            type: type,
+            duration: duration,
+            kcal: kcal,
+            distance: distance
+        )
+        self.workoutData.append(sample)
+    }
+}
+
+struct WorkoutSample: Codable {
+    var startTime: Date
+    var endTime: Date
+    var type: Int
+    var duration: Int
+    var kcal: Int?
+    var distance: Int?
+}
+
 class MySleepData: ObservableObject {
     var sleepData: [Sample] = []
     
@@ -29,11 +54,51 @@ struct Sample: Codable {
     var endDate: Date?
 }
 
+enum SampleOrWorkout {
+    case sample([Sample])
+    case workout([WorkoutSample])
+}
+
+extension SampleOrWorkout: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case type = "type"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let singleContainer = try decoder.singleValueContainer()
+        
+        let type = try container.decode(String.self, forKey: .type)
+        switch type {
+        case "sample":
+            let sample = try singleContainer.decode(Sample.self)
+            self = .sample([sample])
+        case "workout":
+            let workout = try singleContainer.decode(WorkoutSample.self)
+            self = .workout([workout])
+        default:
+            fatalError("Unknown type of content.")
+            // or handle this case properly
+        }
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var singleContainer = encoder.singleValueContainer()
+        
+        switch self {
+        case .sample(let sample):
+            try singleContainer.encode(sample)
+        case .workout(let workout):
+            try singleContainer.encode(workout)
+        }
+    }
+}
+
 public class MetriportClient {
     let healthStore: HKHealthStore
     let metriportApi: MetriportApi
     private let healthKitTypes = HealthKitTypes()
-    private var thirtyDaySamples: [ String: [Sample] ] = [:]
+    private var thirtyDaySamples: [ String: SampleOrWorkout ] = [:]
 
     init (healthStore: HKHealthStore, clientApiKey: String, apiUrl: String?) {
         self.metriportApi = MetriportApi(clientApiKey: clientApiKey, apiUrl: apiUrl)
@@ -43,56 +108,8 @@ public class MetriportClient {
     public func checkBackgroundUpdates(metriportUserId: String, sampleTypes: [HKSampleType]) {
         enableBackgroundDelivery(for: sampleTypes)
         fetchDataForAllTypes(metriportUserId: metriportUserId)
-//        workouts()
     }
     
-
-    // TODO: AGGREGATE WORKOUT DATA
-    // ITS A QUERY WITHIN A QUERY IF I WANT TO BE ABLE TO ACCESS HEART RATE, RESPITORY RATE ETC. DURING WORKOUT
-//    func workouts() {
-//        let calendar = Calendar.current
-//        let endDate = Date()
-//        let oneMonthAgo = DateComponents(month: -1)
-//        guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
-//            fatalError("*** Unable to calculate the start date ***")
-//        }
-//
-//        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: .strictStartDate)
-//
-//        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate,
-//                                              ascending: true)
-//
-//        let query = HKSampleQuery(
-//          sampleType: .workoutType(),
-//          predicate: predicate,
-//          limit: 20,
-//          sortDescriptors: [sortDescriptor]) { (query, results, error) in
-//              if let results = results {
-//                  for result in results {
-//                      if let workout = result as? HKWorkout {
-//                          // Here's a HKWorkout object
-//                          print(workout.startDate)
-//                          print(workout.duration)
-//                          print(workout.workoutActivityType.rawValue)
-//
-//                          if #available(iOS 16.0, *) {
-//                              print(workout.allStatistics.values)
-//                              print(workout.statistics(for: HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!))
-//                              print(workout.statistics(for: HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!)?.sources)
-//
-////                              print(workout.)
-//                          }
-//                          print("")
-//                      }
-//                  }
-//              }
-//              else {
-//                  // No results were returned, check the error
-//              }
-//          }
-//
-//        HKHealthStore().execute(query)
-//    }
 
     // Enable all specified data types to send data in the background
     private func enableBackgroundDelivery(for sampleTypes: [HKSampleType]) {
@@ -139,7 +156,26 @@ public class MetriportClient {
         }
         
         group.enter()
-        fetchSleep(metriportUserId: metriportUserId, group: group)
+        fetchAnchorQuery(
+            type: HKObjectType.categoryType(forIdentifier: HKCategoryTypeIdentifier.sleepAnalysis)!,
+            samplesKey: "HKCategoryValueSleepAnalysis",
+            metriportUserId: metriportUserId,
+            transformData: { samples in
+                let sleepData = self.getSleepData(samples: samples)
+                return SampleOrWorkout.sample(sleepData.sleepData)
+            },
+            group: group)
+        
+        group.enter()
+        fetchAnchorQuery(
+            type: .workoutType(),
+            samplesKey: "HKWorkout",
+            metriportUserId: metriportUserId,
+            transformData: { samples in
+                let workoutData = self.getWorkoutData(samples: samples)
+                return SampleOrWorkout.workout(workoutData.workoutData)
+            },
+            group: group)
 
         group.notify(queue: .main) {
             if self.thirtyDaySamples.count != 0 {
@@ -183,7 +219,7 @@ public class MetriportClient {
             self.setLocalKeyValue(key: "date \(type)", val: lastDate)
             
             if data.count != 0 {
-                self.thirtyDaySamples["\(type)"] = data
+                self.thirtyDaySamples["\(type)"] = SampleOrWorkout.sample(data)
             }
 
             group.leave()
@@ -237,7 +273,7 @@ public class MetriportClient {
                 return
             }
 
-            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : data])
+            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)])
         }
 
         healthStore.execute(query)
@@ -343,54 +379,60 @@ public class MetriportClient {
         }
     }
     
-    func fetchSleep(metriportUserId: String, group: DispatchGroup) {
-        if let sleepType = HKObjectType.categoryType(forIdentifier: HKCategoryTypeIdentifier.sleepAnalysis) {
-            let calendar = Calendar.current
-            let endDate = Date()
-            let oneMonthAgo = DateComponents(day: -30)
-            guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
-                fatalError("*** Unable to calculate the start date ***")
-            }
-            let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
-            
-            var anchor = HKQueryAnchor.init(fromValue: 0)
-            
-            if UserDefaults.standard.object(forKey: "sleepAnchor") != nil {
-                let data = UserDefaults.standard.object(forKey: "sleepAnchor") as! Data
-                do {
-                    anchor = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data) as! HKQueryAnchor
-                } catch {
-                    print("Unable to retrieve an anchor")
-                }
-            }
-
-            let query = HKAnchoredObjectQuery(type: sleepType, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
-                guard let samples = samplesOrNil else {
-                    return
-                }
-
-                let sleepData = self.getSleepData(samples: samples)
-                
-                self.setLocalKeyValue(key: "sleepAnchor", val: newAnchor!)
-                self.thirtyDaySamples["HKCategoryValueSleepAnalysis"] = sleepData.sleepData
-                group.leave()
-            }
-            
-            query.updateHandler = { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) in
-                guard let samples = samplesOrNil else {
-                    return
-                }
-                                
-                let sleepData = self.getSleepData(samples: samples)
-                self.setLocalKeyValue(key: "sleepAnchor", val: newAnchor!)
-                self.metriportApi.sendData(metriportUserId: metriportUserId, samples: ["HKCategoryValueSleepAnalysis" : sleepData.sleepData])
-            }
-            
-            healthStore.execute(query)
+    func fetchAnchorQuery(
+        type: HKSampleType,
+        samplesKey: String,
+        metriportUserId: String,
+        transformData: @escaping ([HKSample]) -> SampleOrWorkout,
+        group: DispatchGroup
+    ) {
+        let calendar = Calendar.current
+        let endDate = Date()
+        let oneMonthAgo = DateComponents(day: -30)
+        guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
+            fatalError("*** Unable to calculate the start date ***")
         }
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
+        
+        var anchor = HKQueryAnchor.init(fromValue: 0)
+        let anchorKey = "\(type) anchor"
+        
+        if UserDefaults.standard.object(forKey: anchorKey) != nil {
+            let data = UserDefaults.standard.object(forKey: anchorKey) as! Data
+            do {
+                anchor = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data) as! HKQueryAnchor
+            } catch {
+                print("Unable to retrieve an anchor")
+            }
+        }
+
+        let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
+            guard let samples = samplesOrNil else {
+                return
+            }
+
+            let data = transformData(samples)
+            
+            self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
+            self.thirtyDaySamples[samplesKey] = data
+            group.leave()
+        }
+        
+        query.updateHandler = { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) in
+            guard let samples = samplesOrNil else {
+                return
+            }
+                            
+            let data = transformData(samples)
+            
+            self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
+            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data])
+        }
+        
+        healthStore.execute(query)
     }
     
-    func getSleepData(samples: [Any]) -> MySleepData {
+    func getSleepData(samples: [HKSample]) -> MySleepData {
         let sleepData = MySleepData()
         
         for item in samples {
@@ -401,7 +443,7 @@ public class MetriportClient {
                     case HKCategoryValueSleepAnalysis.awake.rawValue:
                         sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: Int(sample.endDate - sample.startDate))
                     default:
-                        print("")
+                    break
                 }
                 
                 if #available(iOS 16.0, *) {
@@ -413,13 +455,44 @@ public class MetriportClient {
                         case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
                             sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: Int(sample.endDate - sample.startDate))
                         default:
-                            print("")
+                        break
                     }
                 }
             }
         }
         
         return sleepData
+    }
+    
+     func getWorkoutData(samples: [HKSample]) -> MyWorkoutData {
+        let workoutData = MyWorkoutData()
+        
+         for result in samples {
+             if let workout = result as? HKWorkout {
+                 let startTime = workout.startDate
+                 let endTime = workout.endDate
+                 let duration = Int(workout.duration)
+                 let type = Int(workout.workoutActivityType.rawValue)
+                 var kcal: Int? = nil
+                 var distance: Int? = nil
+
+               if #available(iOS 16.0, *) {
+                   for (key, stat) in workout.allStatistics {
+                       if key == HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)! && stat.sumQuantity() != nil {
+                           kcal = Int((stat.sumQuantity()?.doubleValue(for: .kilocalorie()))!)
+                       }
+                       
+                       if key == HKObjectType.quantityType(forIdentifier:  .distanceWalkingRunning)! && stat.sumQuantity() != nil {
+                           distance = Int((stat.sumQuantity()?.doubleValue(for: .meter()))!)
+                       }
+                   }
+               }
+                 
+                 workoutData.addWorkout(startTime: startTime, endTime: endTime, type: type, duration: duration, kcal: kcal, distance: distance)
+             }
+         }
+        
+        return workoutData
     }
 }
 
