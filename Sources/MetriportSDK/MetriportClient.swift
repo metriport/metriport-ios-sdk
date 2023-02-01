@@ -78,7 +78,6 @@ extension SampleOrWorkout: Codable {
             self = .workout([workout])
         default:
             fatalError("Unknown type of content.")
-            // or handle this case properly
         }
     }
     
