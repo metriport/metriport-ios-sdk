@@ -15,7 +15,7 @@ class MetriportApi {
 
     // Encode the data and strigify payload to be able to send as JSON
     // Data is structured as [ "TYPE ie HeartRate": [ARRAY OF SAMPLES]]
-    public func sendData(metriportUserId: String, samples: [ String: [Sample] ]) {
+    public func sendData(metriportUserId: String, samples: [ String: SampleOrWorkout ]) {
         var stringifyPayload: String = ""
 
         do {
@@ -43,16 +43,45 @@ class MetriportApi {
         request.httpBody = bodyData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(self.clientApiKey, forHTTPHeaderField: "x-api-key")
+        let failedPayloadsKey = "failedPayloads"
 
         let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let response = response as? HTTPURLResponse,
-                error == nil
-            else {
+            guard let response = response as? HTTPURLResponse, error == nil else {
                 print("error", error ?? URLError(.badServerResponse))
                 return
             }
 
-            guard (200 ... 299) ~= response.statusCode else {
+            if (200 ... 299) ~= response.statusCode {
+                if let failedPayloads = UserDefaults.standard.object(forKey: failedPayloadsKey) as! Optional<Data> {
+                    do {
+                        let payloads = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(failedPayloads) as! [String]
+                        for failedPayload in payloads {
+                            self.makeRequest(metriportUserId: metriportUserId, payload: failedPayload)
+                        }
+                        UserDefaults.standard.removeObject(forKey: failedPayloadsKey)
+                    } catch {
+                        print("Couldnt read object")
+                    }
+                }
+            } else {
+                var payloads: [String] = []
+                
+                if let failedPayloads = UserDefaults.standard.object(forKey: failedPayloadsKey) as! Optional<Data> {
+                    do {
+                        payloads = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(failedPayloads) as! [String]
+                    } catch {
+                        print("Couldnt read object")
+                    }
+                }
+                
+                do {
+                    payloads.append(payload)
+                    let data : Data = try NSKeyedArchiver.archivedData(withRootObject: payloads, requiringSecureCoding: false)
+                    UserDefaults.standard.set(data, forKey: failedPayloadsKey)
+                } catch {
+                    print("Couldnt write files")
+                }
+                
                 print("statusCode should be 2xx, but is \(response.statusCode)")
                 print("response = \(response)")
                 return
