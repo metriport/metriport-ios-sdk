@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Combine
+import Sentry
 
 class WebViewModel : ObservableObject {
     // iOS to Javascript
@@ -18,10 +19,10 @@ public enum ColorMode {
 public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
     var healthStore: MetriportHealthStoreManager;
     private let healthKitTypes = HealthKitTypes()
-    
+
     var url: String
     private var webView: WKWebView?
-    
+
     public init(
         healthStore: MetriportHealthStoreManager,
         token: String,
@@ -30,10 +31,21 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
         customColor: String? = nil,
         providers: [String]? = nil,
         url: String? = nil) {
+            SentrySDK.start { options in
+              options.dsn = "https://c88af1c967a74f77a291eec056387e8a@o4504912808837120.ingest.sentry.io/4504917552267264"
+              options.debug = true // Enabled debug when first installing is always helpful
+            }
+            
+            do {
+                try aMethodThatMightFail()
+            } catch {
+                SentrySDK.capture(error: error)
+            }
+
             let config = WKWebViewConfiguration()
-            
+
             let webView = WKWebView(frame: .zero, configuration: config)
-            
+
             self.webView = webView
             var url = url ?? "https://connect.metriport.com"
             url = "\(url)?token=\(token)"
@@ -55,7 +67,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
             self.url = url;
             self.healthStore = healthStore
         }
-    
+
     // Received messages from webview
     public func receivedJsonValueFromWebView(value: [String : Any?]) {
         if let message = value["data"] as? String {
@@ -66,7 +78,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
                     // Once all is complete the webview will receive the metriportuserid and send it to swift to use for webhook requests
                     let data : Data = try NSKeyedArchiver.archivedData(withRootObject: message, requiringSecureCoding: false)
                     UserDefaults.standard.set(data, forKey: "metriportUserId")
-                    
+
                     // This will initially start fetching background data (last 30 days)
                     self.healthStore.metriportClient.checkBackgroundUpdates(metriportUserId: message, sampleTypes: self.healthKitTypes.typesToRead)
                 } catch {
@@ -75,47 +87,47 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
             }
         }
     }
-    
+
     public func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
-    
+
     public func makeUIView(context: Context) -> WKWebView {
         webView?.configuration.userContentController.add(self.makeCoordinator(), name: "connect")
         webView?.navigationDelegate = context.coordinator
         webView?.allowsBackForwardNavigationGestures = false
         webView?.scrollView.isScrollEnabled = true
-        
+
         return webView!
     }
-    
+
     public func updateUIView(_ webView: WKWebView, context: Context) {
         let request = URLRequest(url: URL(string: "\(url)&apple=true")!)
         webView.load(request)
     }
-    
+
     // These functions can be used to create custom buttons to navigate within webview
     public func goBack(){
         webView?.goBack()
     }
-    
+
     public func goForward(){
         webView?.goForward()
     }
-    
+
     public func refresh() {
         webView?.reload()
     }
-    
+
     public class Coordinator : NSObject, WKNavigationDelegate {
         var parent: MetriportWidget
         var callbackValueFromNative: AnyCancellable? = nil
         var delegate: WebViewHandlerDelegate?
-        
+
         deinit {
             callbackValueFromNative?.cancel()
         }
-        
+
         init(_ uiWebView: MetriportWidget) {
             self.parent = uiWebView
             self.delegate = parent
