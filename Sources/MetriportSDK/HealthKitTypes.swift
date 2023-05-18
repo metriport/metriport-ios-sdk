@@ -92,7 +92,8 @@ struct HealthKitTypes {
             
         case
             HKSampleType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKSampleType.quantityType(forIdentifier: .basalEnergyBurned)!:
+            HKSampleType.quantityType(forIdentifier: .basalEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)!:
             return .kilocalorie()
             
         case HKSampleType.quantityType(forIdentifier: .vo2Max)!:
@@ -149,7 +150,6 @@ struct HealthKitTypes {
             HKObjectType.quantityType(forIdentifier: .dietaryCalcium)!,
             HKObjectType.quantityType(forIdentifier: .dietaryCholesterol)!,
             HKObjectType.quantityType(forIdentifier: .dietaryCopper)!,
-            HKObjectType.quantityType(forIdentifier: .dietaryEnergyConsumed)!,
             HKObjectType.quantityType(forIdentifier: .dietaryFolate)!,
             HKObjectType.quantityType(forIdentifier: .dietaryIodine)!,
             HKObjectType.quantityType(forIdentifier: .dietaryMagnesium)!,
