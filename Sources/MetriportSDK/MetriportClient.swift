@@ -6,7 +6,7 @@ import WebKit
 
 class MyWorkoutData: ObservableObject {
     var workoutData: [WorkoutSample] = []
-    
+
     public func addWorkout(startTime: Date, endTime: Date, type: Int, duration: Int, kcal: Int?, distance: Int?) {
         let sample = WorkoutSample(
             startTime: startTime,
@@ -31,7 +31,7 @@ struct WorkoutSample: Codable {
 
 class MySleepData: ObservableObject {
     var sleepData: [Sample] = []
-    
+
     public func addSample(startTime: Date, endTime: Date, type: String, value: Int) {
         let sample = Sample(date: startTime,value: value, type: type, endDate: endTime)
         self.sleepData.append(sample)
@@ -63,11 +63,11 @@ extension SampleOrWorkout: Codable {
     private enum CodingKeys: String, CodingKey {
         case type = "type"
     }
-    
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let singleContainer = try decoder.singleValueContainer()
-        
+
         let type = try container.decode(String.self, forKey: .type)
         switch type {
         case "sample":
@@ -80,10 +80,10 @@ extension SampleOrWorkout: Codable {
             fatalError("Unknown type of content.")
         }
     }
-    
+
     func encode(to encoder: Encoder) throws {
         var singleContainer = encoder.singleValueContainer()
-        
+
         switch self {
         case .sample(let sample):
             try singleContainer.encode(sample)
@@ -108,7 +108,7 @@ public class MetriportClient {
         enableBackgroundDelivery(for: sampleTypes)
         fetchDataForAllTypes(metriportUserId: metriportUserId)
     }
-    
+
 
     // Enable all specified data types to send data in the background
     private func enableBackgroundDelivery(for sampleTypes: [HKSampleType]) {
@@ -130,30 +130,30 @@ public class MetriportClient {
         // This allows us to await until all the queries for the last 30 days are done
         // So that in group.notifiy we make a request
         let group = DispatchGroup()
-        
+
         // Aggregate data for a day
         let interval = DateComponents(day: 1)
-        
+
         for sampleType in cumalativeTypes {
             group.enter()
 
            if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
                fetchHistoricalData(type: sampleType, queryOption: .cumulativeSum, interval: interval, group: group)
            }
-            
+
             fetchHourly(type: sampleType, queryOption: .cumulativeSum, metriportUserId: metriportUserId)
         }
 
         for sampleType in discreteTypes {
             group.enter()
-            
+
             if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
                 fetchHistoricalData(type: sampleType, queryOption: .discreteAverage, interval: interval, group: group)
             }
-            
+
             fetchHourly(type: sampleType, queryOption: .discreteAverage, metriportUserId: metriportUserId)
         }
-        
+
         group.enter()
         fetchAnchorQuery(
             type: HKObjectType.categoryType(forIdentifier: HKCategoryTypeIdentifier.sleepAnalysis)!,
@@ -164,7 +164,7 @@ public class MetriportClient {
                 return SampleOrWorkout.sample(sleepData.sleepData)
             },
             group: group)
-        
+
         group.enter()
         fetchAnchorQuery(
             type: .workoutType(),
@@ -216,7 +216,7 @@ public class MetriportClient {
             let lastDate = data.last?.date ?? Date()
 
             self.setLocalKeyValue(key: "date \(type)", val: lastDate)
-            
+
             if data.count != 0 {
                 self.thirtyDaySamples["\(type)"] = SampleOrWorkout.sample(data)
             }
@@ -351,10 +351,16 @@ public class MetriportClient {
         { (statistics, stop) in
             if let quantity = self.getSumOrAvgQuantity(statistics: statistics, queryOption: queryOption) {
                 let date = statistics.startDate
-                let value = quantity.doubleValue(for: unit)
+                let compatible = quantity.is(compatibleWith: unit)
 
-                // Extract each day's data.
-                dailyData.addDay(date: date, value: Int(value))
+                if compatible {
+                    let value = quantity.doubleValue(for: unit)
+
+                    // Extract each day's data.
+                    dailyData.addDay(date: date, value: Int(value))
+                } else {
+                    print("Unit is not compatible")
+                }
             }
         }
 
@@ -377,7 +383,7 @@ public class MetriportClient {
             print("Couldnt write files")
         }
     }
-    
+
     func fetchAnchorQuery(
         type: HKSampleType,
         samplesKey: String,
@@ -392,10 +398,10 @@ public class MetriportClient {
             fatalError("*** Unable to calculate the start date ***")
         }
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
-        
+
         var anchor = HKQueryAnchor.init(fromValue: 0)
         let anchorKey = "\(type) anchor"
-        
+
         if UserDefaults.standard.object(forKey: anchorKey) != nil {
             let data = UserDefaults.standard.object(forKey: anchorKey) as! Data
             do {
@@ -411,29 +417,29 @@ public class MetriportClient {
             }
 
             let data = transformData(samples)
-            
+
             self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
             self.thirtyDaySamples[samplesKey] = data
             group.leave()
         }
-        
+
         query.updateHandler = { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) in
             guard let samples = samplesOrNil else {
                 return
             }
-                            
+
             let data = transformData(samples)
-            
+
             self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
             self.metriportApi.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data])
         }
-        
+
         healthStore.execute(query)
     }
-    
+
     func getSleepData(samples: [HKSample]) -> MySleepData {
         let sleepData = MySleepData()
-        
+
         for item in samples {
             if let sample = item as? HKCategorySample {
                 switch sample.value {
@@ -444,7 +450,7 @@ public class MetriportClient {
                     default:
                     break
                 }
-                
+
                 if #available(iOS 16.0, *) {
                     switch sample.value {
                         case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
@@ -459,13 +465,13 @@ public class MetriportClient {
                 }
             }
         }
-        
+
         return sleepData
     }
-    
+
      func getWorkoutData(samples: [HKSample]) -> MyWorkoutData {
         let workoutData = MyWorkoutData()
-        
+
          for result in samples {
              if let workout = result as? HKWorkout {
                  let startTime = workout.startDate
@@ -480,17 +486,17 @@ public class MetriportClient {
                        if key == HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)! && stat.sumQuantity() != nil {
                            kcal = Int((stat.sumQuantity()?.doubleValue(for: .kilocalorie()))!)
                        }
-                       
+
                        if key == HKObjectType.quantityType(forIdentifier:  .distanceWalkingRunning)! && stat.sumQuantity() != nil {
                            distance = Int((stat.sumQuantity()?.doubleValue(for: .meter()))!)
                        }
                    }
                }
-                 
+
                  workoutData.addWorkout(startTime: startTime, endTime: endTime, type: type, duration: duration, kcal: kcal, distance: distance)
              }
          }
-        
+
         return workoutData
     }
 }

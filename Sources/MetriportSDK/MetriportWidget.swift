@@ -1,7 +1,6 @@
 import SwiftUI
 import WebKit
 import Combine
-import Sentry
 
 class WebViewModel : ObservableObject {
     // iOS to Javascript
@@ -31,17 +30,6 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
         customColor: String? = nil,
         providers: [String]? = nil,
         url: String? = nil) {
-            SentrySDK.start { options in
-              options.dsn = "https://c88af1c967a74f77a291eec056387e8a@o4504912808837120.ingest.sentry.io/4504917552267264"
-              options.debug = true // Enabled debug when first installing is always helpful
-            }
-            
-            do {
-                try aMethodThatMightFail()
-            } catch {
-                SentrySDK.capture(error: error)
-            }
-
             let config = WKWebViewConfiguration()
 
             let webView = WKWebView(frame: .zero, configuration: config)
