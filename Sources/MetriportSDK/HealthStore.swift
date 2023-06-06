@@ -24,12 +24,9 @@ public class MetriportHealthStoreManager {
                 } catch {
                     self.metriportClient.metriportApi.sendError(metriportUserId: self.metriportUserId, error: "Error retrieving metriportUserId from local storage")
                 }
-            }
-
-            if self.metriportUserId == "" {
+            } else {
                 self.metriportClient.metriportApi.sendError(metriportUserId: self.metriportUserId, error: "Error no metriportUserId present")
             }
-
 
             self.metriportClient.checkBackgroundUpdates(metriportUserId: self.metriportUserId, sampleTypes: self.healthKitTypes.typesToRead)
         }
