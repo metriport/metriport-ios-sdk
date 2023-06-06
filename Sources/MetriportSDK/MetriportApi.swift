@@ -31,6 +31,18 @@ class MetriportApi {
         makeRequest(metriportUserId: metriportUserId, payload: stringifyPayload)
     }
 
+    public func sendError(metriportUserId: String, error: String) {
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(["error": error])
+
+            makeRequest(metriportUserId: metriportUserId, payload: String(data: data, encoding: .utf8)!)
+        } catch {
+            print("Couldnt make request")
+        }
+    }
+
     // Send data to the api
     private func makeRequest(metriportUserId: String, payload: String) {
 
@@ -65,7 +77,7 @@ class MetriportApi {
                 }
             } else {
                 var payloads: [String] = []
-                
+
                 if let failedPayloads = UserDefaults.standard.object(forKey: failedPayloadsKey) as! Optional<Data> {
                     do {
                         payloads = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(failedPayloads) as! [String]
@@ -73,7 +85,7 @@ class MetriportApi {
                         print("Couldnt read object")
                     }
                 }
-                
+
                 do {
                     payloads.append(payload)
                     let data : Data = try NSKeyedArchiver.archivedData(withRootObject: payloads, requiringSecureCoding: false)
@@ -81,7 +93,7 @@ class MetriportApi {
                 } catch {
                     print("Couldnt write files")
                 }
-                
+
                 print("statusCode should be 2xx, but is \(response.statusCode)")
                 print("response = \(response)")
                 return

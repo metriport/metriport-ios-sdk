@@ -105,17 +105,18 @@ public class MetriportClient {
     }
 
     public func checkBackgroundUpdates(metriportUserId: String, sampleTypes: [HKSampleType]) {
-        enableBackgroundDelivery(for: sampleTypes)
+        enableBackgroundDelivery(for: sampleTypes, metriportUserId: metriportUserId)
         fetchDataForAllTypes(metriportUserId: metriportUserId)
     }
 
 
     // Enable all specified data types to send data in the background
-    private func enableBackgroundDelivery(for sampleTypes: [HKSampleType]) {
+    private func enableBackgroundDelivery(for sampleTypes: [HKSampleType], metriportUserId: String) {
       for sampleType in sampleTypes {
-          healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly) { (success, failure) in
+          healthStore.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { (success, failure) in
 
           guard failure == nil && success else {
+            self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error enabling background delivery")
             return
           }
         }
@@ -138,7 +139,7 @@ public class MetriportClient {
             group.enter()
 
            if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
-               fetchHistoricalData(type: sampleType, queryOption: .cumulativeSum, interval: interval, group: group)
+               fetchHistoricalData(type: sampleType, queryOption: .cumulativeSum, interval: interval, group: group, metriportUserId: metriportUserId)
            }
 
             fetchHourly(type: sampleType, queryOption: .cumulativeSum, metriportUserId: metriportUserId)
@@ -148,7 +149,7 @@ public class MetriportClient {
             group.enter()
 
             if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
-                fetchHistoricalData(type: sampleType, queryOption: .discreteAverage, interval: interval, group: group)
+                fetchHistoricalData(type: sampleType, queryOption: .discreteAverage, interval: interval, group: group, metriportUserId: metriportUserId)
             }
 
             fetchHourly(type: sampleType, queryOption: .discreteAverage, metriportUserId: metriportUserId)
@@ -184,7 +185,7 @@ public class MetriportClient {
     }
 
     // Retrieve daily values for the last 30 days for all types
-    private func fetchHistoricalData(type: HKQuantityType, queryOption: HKStatisticsOptions, interval: DateComponents, group: DispatchGroup) {
+    private func fetchHistoricalData(type: HKQuantityType, queryOption: HKStatisticsOptions, interval: DateComponents, group: DispatchGroup, metriportUserId: String) {
 
         let query = createStatisticsQuery(interval: interval, quantityType: type, options: queryOption)
 
@@ -196,6 +197,7 @@ public class MetriportClient {
             let endDate = Date()
             let oneMonthAgo = DateComponents(month: -1)
             guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
+                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the historical start date")
                 fatalError("*** Unable to calculate the start date ***")
             }
 
@@ -207,7 +209,7 @@ public class MetriportClient {
                                                    startDate: startDate,
                                                    endDate: endDate,
                                                    queryOption: queryOption) else {
-                print("error with handleStatistics \(type)")
+                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to handle historical statistics")
                 return
             }
 
@@ -252,11 +254,12 @@ public class MetriportClient {
                 do {
                     startDate = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(date) as! Date
                 } catch {
-                    print("Couldnt read object")
+                    self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to read hourly last datetime")
                 }
             }
 
             guard let endDate = calendar.date(byAdding: tomorrow, to: startDate) else {
+                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
                 fatalError("*** Unable to calculate the start date ***")
             }
 
@@ -268,7 +271,7 @@ public class MetriportClient {
                                                    startDate: startDate,
                                                    endDate: endDate,
                                                    queryOption: queryOption) else {
-                print("error with handleStatistics \(type)")
+                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics")
                 return
             }
 
@@ -359,7 +362,8 @@ public class MetriportClient {
                     // Extract each day's data.
                     dailyData.addDay(date: date, value: Int(value))
                 } else {
-                    print("Unit is not compatible")
+                    print(quantity)
+                    print(unit)
                 }
             }
         }
