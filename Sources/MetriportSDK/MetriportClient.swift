@@ -179,7 +179,7 @@ public class MetriportClient {
 
         group.notify(queue: .main) {
             if self.thirtyDaySamples.count != 0 {
-                self.metriportApi.sendData(metriportUserId: metriportUserId, samples: self.thirtyDaySamples)
+                self.metriportApi.sendData(metriportUserId: metriportUserId, samples: self.thirtyDaySamples, hourly: false)
             }
         }
     }
@@ -275,7 +275,7 @@ public class MetriportClient {
                 return
             }
 
-            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)])
+            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
         }
 
         healthStore.execute(query)
@@ -435,7 +435,7 @@ public class MetriportClient {
             let data = transformData(samples)
 
             self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
-            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data])
+            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data], hourly: true)
         }
 
         healthStore.execute(query)
