@@ -15,7 +15,7 @@ class MetriportApi {
 
     // Encode the data and strigify payload to be able to send as JSON
     // Data is structured as [ "TYPE ie HeartRate": [ARRAY OF SAMPLES]]
-    public func sendData(metriportUserId: String, samples: [ String: SampleOrWorkout ]) {
+    public func sendData(metriportUserId: String, samples: [ String: SampleOrWorkout ], hourly: Bool? = nil) {
         var stringifyPayload: String = ""
 
         do {
@@ -28,7 +28,7 @@ class MetriportApi {
             print("Couldnt write files")
         }
 
-        makeRequest(metriportUserId: metriportUserId, payload: stringifyPayload)
+        makeRequest(metriportUserId: metriportUserId, payload: stringifyPayload, hourly: hourly)
     }
 
     public func sendError(metriportUserId: String, error: String) {
@@ -44,11 +44,17 @@ class MetriportApi {
     }
 
     // Send data to the api
-    private func makeRequest(metriportUserId: String, payload: String) {
+    private func makeRequest(metriportUserId: String, payload: String, hourly: Bool? = nil) {
 
-        let bodyData = try? JSONSerialization.data(
+        var bodyData = try? JSONSerialization.data(
             withJSONObject: ["metriportUserId": metriportUserId, "data": payload]
         )
+        
+        if hourly != nil {
+            bodyData = try? JSONSerialization.data(
+                withJSONObject: ["metriportUserId": metriportUserId, "data": payload, "hourly": hourly ?? false]
+            )
+        }
 
         var request = URLRequest(url: URL(string: "\(self.apiUrl)/webhook/apple")!)
         request.httpMethod = "POST"
