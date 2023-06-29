@@ -36,7 +36,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
 
             self.webView = webView
             var url = url ?? "https://connect.metriport.com"
-            url = "\(url)?token\(token)"
+            url = "\(url)?token=\(token)"
             url = sandbox ? "\(url)&sandbox=true" : url;
             let colorMode = colorMode ?? .light;
             switch colorMode {
