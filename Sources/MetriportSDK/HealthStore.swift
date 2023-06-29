@@ -27,8 +27,6 @@ public class MetriportHealthStoreManager {
             } else {
                 self.metriportClient.metriportApi.sendError(metriportUserId: self.metriportUserId, error: "Error no metriportUserId present")
             }
-
-            self.metriportClient.checkBackgroundUpdates(metriportUserId: self.metriportUserId, sampleTypes: self.healthKitTypes.typesToRead)
         }
     }
     // Request authorization from user for the healthkit access

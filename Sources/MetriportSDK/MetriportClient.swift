@@ -93,7 +93,7 @@ extension SampleOrWorkout: Codable {
     }
 }
 
-public class MetriportClient {
+@objc public class MetriportClient: NSObject {
     let healthStore: HKHealthStore
     let metriportApi: MetriportApi
     private let healthKitTypes = HealthKitTypes()
@@ -104,9 +104,19 @@ public class MetriportClient {
         self.healthStore = healthStore
     }
 
-    public func checkBackgroundUpdates(metriportUserId: String, sampleTypes: [HKSampleType]) {
-        enableBackgroundDelivery(for: sampleTypes, metriportUserId: metriportUserId)
-        fetchDataForAllTypes(metriportUserId: metriportUserId)
+    @objc(checkBackgroundUpdates)
+    public func checkBackgroundUpdates() {
+        if let userid = UserDefaults.standard.object(forKey: "metriportUserId") as! Optional<Data> {
+            do {
+                let metriportUserId = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(userid) as! String
+                enableBackgroundDelivery(for: healthKitTypes.typesToRead, metriportUserId: metriportUserId)
+                fetchDataForAllTypes(metriportUserId: metriportUserId)
+            } catch {
+                self.metriportApi.sendError(metriportUserId: "unknown", error: "Error retrieving metriportUserId from local storage")
+            }
+        } else {
+            self.metriportApi.sendError(metriportUserId: "unknown", error: "Error no metriportUserId present")
+        }
     }
 
 
