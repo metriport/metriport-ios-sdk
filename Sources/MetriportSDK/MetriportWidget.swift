@@ -36,7 +36,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
 
             self.webView = webView
             var url = url ?? "https://connect.metriport.com"
-            url = "\(url)?token=XFbnO8rf7-yh_JLLgLuT5"
+            url = "\(url)?token\(token)"
             url = sandbox ? "\(url)&sandbox=true" : url;
             let colorMode = colorMode ?? .light;
             switch colorMode {
@@ -68,7 +68,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
                     UserDefaults.standard.set(data, forKey: "metriportUserId")
 
                     // This will initially start fetching background data (last 30 days)
-                    self.healthStore.metriportClient.checkBackgroundUpdates()
+                    self.healthStore.metriportClient.checkBackgroundUpdates(metriportUserId: message, sampleTypes: self.healthKitTypes.typesToRead)
                 } catch {
                     print("Couldnt write files")
                 }
@@ -90,7 +90,6 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
     }
 
     public func updateUIView(_ webView: WKWebView, context: Context) {
-        print(url)
         let request = URLRequest(url: URL(string: "\(url)&apple=true")!)
         webView.load(request)
     }
