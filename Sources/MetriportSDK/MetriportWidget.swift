@@ -68,7 +68,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
                     UserDefaults.standard.set(data, forKey: "metriportUserId")
 
                     // This will initially start fetching background data (last 30 days)
-                    self.healthStore.metriportClient.checkBackgroundUpdates()
+                    MetriportClient.checkBackgroundUpdates()
                 } catch {
                     print("Couldnt write files")
                 }
