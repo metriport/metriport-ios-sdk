@@ -94,46 +94,85 @@ extension SampleOrWorkout: Codable {
 }
 
 @objc public class MetriportClient: NSObject {
-    let healthStore: HKHealthStore
-    let metriportApi: MetriportApi
-    private let healthKitTypes = HealthKitTypes()
-    private var thirtyDaySamples: [ String: SampleOrWorkout ] = [:]
+    public static var healthStore: HKHealthStore?
+    static var metriportApi: MetriportApi?
+    private static let healthKitTypes = HealthKitTypes()
+    private static var thirtyDaySamples: [ String: SampleOrWorkout ] = [:]
 
     init (healthStore: HKHealthStore, clientApiKey: String, apiUrl: String?) {
-        self.metriportApi = MetriportApi(clientApiKey: clientApiKey, apiUrl: apiUrl)
-        self.healthStore = healthStore
+        MetriportClient.metriportApi = MetriportApi(clientApiKey: clientApiKey, apiUrl: apiUrl)
+        MetriportClient.healthStore = healthStore
     }
 
     @objc(checkBackgroundUpdates)
-    public func checkBackgroundUpdates() {
-        if let userid = UserDefaults.standard.object(forKey: "metriportUserId") as! Optional<Data> {
-            do {
-                let metriportUserId = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(userid) as! String
-                enableBackgroundDelivery(for: healthKitTypes.typesToRead, metriportUserId: metriportUserId)
-                fetchDataForAllTypes(metriportUserId: metriportUserId)
-            } catch {
-                self.metriportApi.sendError(metriportUserId: "unknown", error: "Error retrieving metriportUserId from local storage")
+    public static func checkBackgroundUpdates() {
+        if healthStore ~= nil && UserDefaults.standard.object(forKey: "HealthKitAuth") != nil {
+            if let userid = UserDefaults.standard.object(forKey: "metriportUserId") as! Optional<Data> {
+                do {
+                    let metriportUserId = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(userid) as! String
+
+                    if let localClientApiKey = UserDefaults.standard.object(forKey: "clientApiKey") as! Optional<Data> {
+                        if let localApiUrl = UserDefaults.standard.object(forKey: "apiUrl") as! Optional<Data> {
+                            if let localSandbox = UserDefaults.standard.object(forKey: "sandbox") as! Optional<Data> {
+                                do {
+                                    let clientApiKey = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localClientApiKey) as! String
+                                    let apiUrl = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localApiUrl) as! String
+                                    let sandbox = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localSandbox) as! Bool
+
+                                    let metriportHealth = MetriportHealthStoreManager(clientApiKey: clientApiKey, sandbox: sandbox, apiUrl: apiUrl)
+                                    MetriportClient.healthStore = metriportHealth.healthStore
+                                    MetriportClient.metriportApi = MetriportApi(clientApiKey: clientApiKey, apiUrl: apiUrl)
+                                    enableBackgroundDelivery(for: healthKitTypes.typesToRead, metriportUserId: metriportUserId)
+                                    fetchDataForAllTypes(metriportUserId: metriportUserId)
+                                } catch {
+                                    metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error retrieving clientApiKey or apiUrl from local storage")
+                                }
+                            } else {
+                                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error retrieving localHealthStore is undefined")
+                            }
+                        } else {
+                            metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error retrieving localSandbox is undefined")
+                        }
+                    } else {
+                        metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error retrieving localClientApiKey is undefined")
+                    }
+                } catch {
+                    metriportApi?.sendError(metriportUserId: "unknown", error: "Error retrieving metriportUserId from local storage")
+                }
+            } else {
+                metriportApi?.sendError(metriportUserId: "unknown", error: "Error no metriportUserId present")
             }
-        } else {
-            self.metriportApi.sendError(metriportUserId: "unknown", error: "Error no metriportUserId present")
+        } else if healthStore != nil {
+            if let userid = UserDefaults.standard.object(forKey: "metriportUserId") as! Optional<Data> {
+                do {
+                    let metriportUserId = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(userid) as! String
+                    enableBackgroundDelivery(for: healthKitTypes.typesToRead, metriportUserId: metriportUserId)
+                    fetchDataForAllTypes(metriportUserId: metriportUserId)
+                } catch {
+                    metriportApi?.sendError(metriportUserId: "unknown", error: "Error retrieving metriportUserId from local storage")
+                }
+            } else {
+                metriportApi?.sendError(metriportUserId: "unknown", error: "Error no metriportUserId present")
+            }
         }
     }
 
 
     // Enable all specified data types to send data in the background
-    private func enableBackgroundDelivery(for sampleTypes: [HKSampleType], metriportUserId: String) {
+    private static func enableBackgroundDelivery(for sampleTypes: [HKSampleType], metriportUserId: String) {
       for sampleType in sampleTypes {
-          healthStore.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { (success, failure) in
+          healthStore?.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { (success, failure) in
 
           guard failure == nil && success else {
-            self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error enabling background delivery")
+
+            metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error enabling background delivery")
             return
           }
         }
       }
     }
 
-    private func fetchDataForAllTypes(metriportUserId: String) {
+    private static func fetchDataForAllTypes(metriportUserId: String) {
         // There are 2 types of data aggregations
         let cumalativeTypes = self.healthKitTypes.cumalativeTypes
         let discreteTypes = self.healthKitTypes.discreteTypes
@@ -189,13 +228,13 @@ extension SampleOrWorkout: Codable {
 
         group.notify(queue: .main) {
             if self.thirtyDaySamples.count != 0 {
-                self.metriportApi.sendData(metriportUserId: metriportUserId, samples: self.thirtyDaySamples, hourly: false)
+                metriportApi?.sendData(metriportUserId: metriportUserId, samples: self.thirtyDaySamples, hourly: false)
             }
         }
     }
 
     // Retrieve daily values for the last 30 days for all types
-    private func fetchHistoricalData(type: HKQuantityType, queryOption: HKStatisticsOptions, interval: DateComponents, group: DispatchGroup, metriportUserId: String) {
+    private static func fetchHistoricalData(type: HKQuantityType, queryOption: HKStatisticsOptions, interval: DateComponents, group: DispatchGroup, metriportUserId: String) {
 
         let query = createStatisticsQuery(interval: interval, quantityType: type, options: queryOption)
 
@@ -207,7 +246,7 @@ extension SampleOrWorkout: Codable {
             let endDate = Date()
             let oneMonthAgo = DateComponents(month: -1)
             guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
-                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the historical start date")
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the historical start date")
                 fatalError("*** Unable to calculate the start date ***")
             }
 
@@ -219,7 +258,7 @@ extension SampleOrWorkout: Codable {
                                                    startDate: startDate,
                                                    endDate: endDate,
                                                    queryOption: queryOption) else {
-                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to handle historical statistics")
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle historical statistics")
                 return
             }
 
@@ -236,10 +275,10 @@ extension SampleOrWorkout: Codable {
             group.leave()
         }
 
-        healthStore.execute(query)
+        healthStore?.execute(query)
     }
 
-    private func fetchHourly(type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
+    private static func fetchHourly(type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
 
         // Aggregate data for an hour
         let interval = DateComponents(hour: 1)
@@ -264,12 +303,12 @@ extension SampleOrWorkout: Codable {
                 do {
                     startDate = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(date) as! Date
                 } catch {
-                    self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to read hourly last datetime")
+                    metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to read hourly last datetime")
                 }
             }
 
             guard let endDate = calendar.date(byAdding: tomorrow, to: startDate) else {
-                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
                 fatalError("*** Unable to calculate the start date ***")
             }
 
@@ -281,18 +320,18 @@ extension SampleOrWorkout: Codable {
                                                    startDate: startDate,
                                                    endDate: endDate,
                                                    queryOption: queryOption) else {
-                self.metriportApi.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics")
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics")
                 return
             }
 
-            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
+            metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
         }
 
-        healthStore.execute(query)
+        healthStore?.execute(query)
     }
 
     // This sets up the query to gather statitics
-    private func createStatisticsQuery(interval: DateComponents, quantityType: Optional<HKQuantityType>, options: HKStatisticsOptions) -> HKStatisticsCollectionQuery {
+    private static func createStatisticsQuery(interval: DateComponents, quantityType: Optional<HKQuantityType>, options: HKStatisticsOptions) -> HKStatisticsCollectionQuery {
         let calendar = Calendar.current
 
 
@@ -330,7 +369,7 @@ extension SampleOrWorkout: Codable {
     }
 
     // This handles the results of the query
-    private func handleStatistics(results: Optional<HKStatisticsCollection>,
+    private static func handleStatistics(results: Optional<HKStatisticsCollection>,
                                   unit: HKUnit,
                                   startDate: Date,
                                   endDate: Date,
@@ -351,7 +390,7 @@ extension SampleOrWorkout: Codable {
     }
 
     // Grabs the results and picks out the data for specified days and then formats it
-    private func getCollectionsData(statsCollection: HKStatisticsCollection,
+    private static func getCollectionsData(statsCollection: HKStatisticsCollection,
                                     startDate: Date,
                                     endDate: Date,
                                     unit: HKUnit,
@@ -381,7 +420,7 @@ extension SampleOrWorkout: Codable {
         return dailyData.dailyData
     }
 
-    private func getSumOrAvgQuantity(statistics: HKStatistics, queryOption: HKStatisticsOptions) -> Optional<HKQuantity> {
+    private static func getSumOrAvgQuantity(statistics: HKStatistics, queryOption: HKStatisticsOptions) -> Optional<HKQuantity> {
         if queryOption == .cumulativeSum {
             return statistics.sumQuantity()
         }
@@ -389,7 +428,7 @@ extension SampleOrWorkout: Codable {
         return statistics.averageQuantity()
     }
 
-    private func setLocalKeyValue(key: String, val: Any) {
+    private static func setLocalKeyValue(key: String, val: Any) {
         do {
             let data : Data = try NSKeyedArchiver.archivedData(withRootObject: val, requiringSecureCoding: false)
             UserDefaults.standard.set(data, forKey: key)
@@ -398,7 +437,7 @@ extension SampleOrWorkout: Codable {
         }
     }
 
-    func fetchAnchorQuery(
+    static func fetchAnchorQuery(
         type: HKSampleType,
         samplesKey: String,
         metriportUserId: String,
@@ -445,13 +484,13 @@ extension SampleOrWorkout: Codable {
             let data = transformData(samples)
 
             self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
-            self.metriportApi.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data], hourly: true)
+            metriportApi?.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data], hourly: true)
         }
 
-        healthStore.execute(query)
+        healthStore?.execute(query)
     }
 
-    func getSleepData(samples: [HKSample]) -> MySleepData {
+    static func getSleepData(samples: [HKSample]) -> MySleepData {
         let sleepData = MySleepData()
 
         for item in samples {
@@ -483,7 +522,7 @@ extension SampleOrWorkout: Codable {
         return sleepData
     }
 
-     func getWorkoutData(samples: [HKSample]) -> MyWorkoutData {
+     static func getWorkoutData(samples: [HKSample]) -> MyWorkoutData {
         let workoutData = MyWorkoutData()
 
          for result in samples {
