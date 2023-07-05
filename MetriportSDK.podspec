@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'MetriportSDK'
-  s.version          = '1.0.11'
+  s.version          = '1.0.13'
   s.summary          = 'A Swift Library for Metriport API and Apple Health integrations.'
 
   s.homepage         = 'https://github.com/metriport/metriport-ios-sdk'

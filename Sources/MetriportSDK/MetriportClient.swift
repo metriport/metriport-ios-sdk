@@ -106,6 +106,7 @@ extension SampleOrWorkout: Codable {
 
     @objc(checkBackgroundUpdates)
     public static func checkBackgroundUpdates() {
+        print("METRIPORT-LOG: Check background updates")
         if healthStore ~= nil && UserDefaults.standard.object(forKey: "HealthKitAuth") != nil {
             if let userid = UserDefaults.standard.object(forKey: "metriportUserId") as! Optional<Data> {
                 do {
@@ -118,6 +119,8 @@ extension SampleOrWorkout: Codable {
                                     let clientApiKey = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localClientApiKey) as! String
                                     let apiUrl = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localApiUrl) as! String
                                     let sandbox = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localSandbox) as! Bool
+                                    
+                                    print("METRIPORT-LOG: retrieved local items", metriportUserId, clientApiKey, apiUrl, sandbox)
 
                                     let metriportHealth = MetriportHealthStoreManager(clientApiKey: clientApiKey, sandbox: sandbox, apiUrl: apiUrl)
                                     MetriportClient.healthStore = metriportHealth.healthStore
@@ -145,6 +148,7 @@ extension SampleOrWorkout: Codable {
         } else if healthStore != nil {
             if let userid = UserDefaults.standard.object(forKey: "metriportUserId") as! Optional<Data> {
                 do {
+                    print("METRIPORT-LOG: retrieved local items", userid)
                     let metriportUserId = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(userid) as! String
                     enableBackgroundDelivery(for: healthKitTypes.typesToRead, metriportUserId: metriportUserId)
                     fetchDataForAllTypes(metriportUserId: metriportUserId)
@@ -160,9 +164,9 @@ extension SampleOrWorkout: Codable {
 
     // Enable all specified data types to send data in the background
     private static func enableBackgroundDelivery(for sampleTypes: [HKSampleType], metriportUserId: String) {
+        print("METRIPORT-LOG: enableBackgroundDelivery")
       for sampleType in sampleTypes {
           healthStore?.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { (success, failure) in
-
           guard failure == nil && success else {
 
             metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error enabling background delivery")
@@ -173,6 +177,7 @@ extension SampleOrWorkout: Codable {
     }
 
     private static func fetchDataForAllTypes(metriportUserId: String) {
+        print("METRIPORT-LOG: fetchDataForAllTypes")
         // There are 2 types of data aggregations
         let cumalativeTypes = self.healthKitTypes.cumalativeTypes
         let discreteTypes = self.healthKitTypes.discreteTypes
@@ -235,7 +240,8 @@ extension SampleOrWorkout: Codable {
 
     // Retrieve daily values for the last 30 days for all types
     private static func fetchHistoricalData(type: HKQuantityType, queryOption: HKStatisticsOptions, interval: DateComponents, group: DispatchGroup, metriportUserId: String) {
-
+        print("METRIPORT-LOG: fetchHistoricalData", type, metriportUserId)
+        
         let query = createStatisticsQuery(interval: interval, quantityType: type, options: queryOption)
 
         query.initialResultsHandler = {
@@ -279,7 +285,7 @@ extension SampleOrWorkout: Codable {
     }
 
     private static func fetchHourly(type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
-
+        print("METRIPORT-LOG: fetchHourly", type, metriportUserId)
         // Aggregate data for an hour
         let interval = DateComponents(hour: 1)
 
@@ -293,7 +299,7 @@ extension SampleOrWorkout: Codable {
         // This listens for data that is added for the type
         query.statisticsUpdateHandler = {
             query, statistics, statisticsCollection, error in
-
+            
             let calendar = Calendar.current
             var startDate = Date()
             let tomorrow = DateComponents(day: 1)
@@ -314,6 +320,8 @@ extension SampleOrWorkout: Codable {
 
             // Each type has its own unit of measurement
             let unit = self.healthKitTypes.getUnit(quantityType: type)
+            
+            print("METRIPORT-LOG: statisticsUpdateHandler", startDate, endDate, unit)
 
             guard let data = self.handleStatistics(results: statisticsCollection,
                                                    unit: unit,
@@ -324,6 +332,10 @@ extension SampleOrWorkout: Codable {
                 return
             }
 
+            print("METRIPORT-LOG: send data", data)
+            
+            self.setLocalKeyValue(key: "date \(type)", val: endDate)
+            
             metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
         }
 
@@ -375,11 +387,16 @@ extension SampleOrWorkout: Codable {
                                   endDate: Date,
                                   queryOption: HKStatisticsOptions
     ) -> [Sample]? {
+        
+        print("METRIPORT-LOG: handleStatistics")
+        
         guard let statsCollection = results else {
             print("error with stats collection")
             return nil
         }
 
+
+        
         let dailyData = self.getCollectionsData(statsCollection: statsCollection,
                                             startDate: startDate,
                                             endDate: endDate,
@@ -416,6 +433,8 @@ extension SampleOrWorkout: Codable {
                 }
             }
         }
+        
+        print("METRIPORT-LOG: getCollectionsData", dailyData)
 
         return dailyData.dailyData
     }

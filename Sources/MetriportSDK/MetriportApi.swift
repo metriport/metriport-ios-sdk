@@ -16,6 +16,7 @@ class MetriportApi {
     // Encode the data and strigify payload to be able to send as JSON
     // Data is structured as [ "TYPE ie HeartRate": [ARRAY OF SAMPLES]]
     public func sendData(metriportUserId: String, samples: [ String: SampleOrWorkout ], hourly: Bool? = nil) {
+        print("METRIPORT-LOG: sendData")
         var stringifyPayload: String = ""
 
         do {
@@ -46,10 +47,12 @@ class MetriportApi {
     // Send data to the api
     private func makeRequest(metriportUserId: String, payload: String, hourly: Bool? = nil) {
 
+        print("METRIPORT-LOG: makeRequest")
+
         var bodyData = try? JSONSerialization.data(
             withJSONObject: ["metriportUserId": metriportUserId, "data": payload]
         )
-        
+
         if hourly != nil {
             bodyData = try? JSONSerialization.data(
                 withJSONObject: ["metriportUserId": metriportUserId, "data": payload, "hourly": hourly ?? false]
@@ -105,6 +108,8 @@ class MetriportApi {
                 return
             }
         }
+
+        print("METRIPORT-LOG: request sent")
 
         task.resume()
     }
