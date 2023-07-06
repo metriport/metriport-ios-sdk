@@ -313,7 +313,7 @@ extension SampleOrWorkout: Codable {
                 }
             }
 
-            guard let endDate = calendar.date(byAdding: tomorrow, to: startDate) else {
+            guard let endDate = calendar.date(byAdding: tomorrow, to: Date()) else {
                 metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
                 fatalError("*** Unable to calculate the start date ***")
             }
@@ -334,7 +334,7 @@ extension SampleOrWorkout: Codable {
 
             print("METRIPORT-LOG: send data", data)
             
-            self.setLocalKeyValue(key: "date \(type)", val: endDate)
+            self.setLocalKeyValue(key: "date \(type)", val: startDate)
             
             metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
         }
