@@ -7,12 +7,14 @@ import WebKit
 class MyWorkoutData: ObservableObject {
     var workoutData: [WorkoutSample] = []
 
-    public func addWorkout(startTime: Date, endTime: Date, type: Int, duration: Int, kcal: Int?, distance: Int?) {
+    public func addWorkout(startTime: Date, endTime: Date, type: Int, duration: Int, sourceId: String, sourceName: String, kcal: Int?, distance: Int?) {
         let sample = WorkoutSample(
             startTime: startTime,
             endTime: endTime,
             type: type,
             duration: duration,
+            sourceId: sourceId,
+            sourceName: sourceName,
             kcal: kcal,
             distance: distance
         )
@@ -25,6 +27,8 @@ struct WorkoutSample: Codable {
     var endTime: Date
     var type: Int
     var duration: Int
+    var sourceId: String
+    var sourceName: String
     var kcal: Int?
     var distance: Int?
 }
@@ -32,8 +36,8 @@ struct WorkoutSample: Codable {
 class MySleepData: ObservableObject {
     var sleepData: [Sample] = []
 
-    public func addSample(startTime: Date, endTime: Date, type: String, value: Int) {
-        let sample = Sample(date: startTime,value: value, type: type, endDate: endTime)
+    public func addSample(startTime: Date, endTime: Date, type: String, value: Int, sourceId: String, sourceName: String) {
+        let sample = Sample(date: startTime,value: value, type: type, endDate: endTime, sourceId: sourceId, sourceName: sourceName)
         self.sleepData.append(sample)
     }
 }
@@ -52,6 +56,8 @@ struct Sample: Codable {
     var value: Int
     var type: String?
     var endDate: Date?
+    var sourceId: String?
+    var sourceName: String?
 }
 
 enum SampleOrWorkout {
@@ -499,8 +505,11 @@ extension SampleOrWorkout: Codable {
             guard let samples = samplesOrNil else {
                 return
             }
+            print(samples)
 
             let data = transformData(samples)
+            
+            print(data)
 
             self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
             metriportApi?.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data], hourly: true)
@@ -514,11 +523,13 @@ extension SampleOrWorkout: Codable {
 
         for item in samples {
             if let sample = item as? HKCategorySample {
+                print(sample)
+                print(sample.value)
                 switch sample.value {
                     case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: Int(sample.endDate - sample.startDate))
+                    sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
                     case HKCategoryValueSleepAnalysis.awake.rawValue:
-                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: Int(sample.endDate - sample.startDate))
+                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
                     default:
                     break
                 }
@@ -526,17 +537,18 @@ extension SampleOrWorkout: Codable {
                 if #available(iOS 16.0, *) {
                     switch sample.value {
                         case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: Int(sample.endDate - sample.startDate))
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
                         case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: Int(sample.endDate - sample.startDate))
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
                         case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: Int(sample.endDate - sample.startDate))
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
                         default:
                         break
                     }
                 }
             }
         }
+        
 
         return sleepData
     }
@@ -565,7 +577,7 @@ extension SampleOrWorkout: Codable {
                    }
                }
 
-                 workoutData.addWorkout(startTime: startTime, endTime: endTime, type: type, duration: duration, kcal: kcal, distance: distance)
+                 workoutData.addWorkout(startTime: startTime, endTime: endTime, type: type, duration: duration, sourceId: workout.sourceRevision.source.bundleIdentifier, sourceName: workout.sourceRevision.source.name, kcal: kcal, distance: distance)
              }
          }
 
