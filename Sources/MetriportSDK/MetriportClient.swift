@@ -125,7 +125,7 @@ extension SampleOrWorkout: Codable {
                                     let clientApiKey = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localClientApiKey) as! String
                                     let apiUrl = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localApiUrl) as! String
                                     let sandbox = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(localSandbox) as! Bool
-                                    
+
                                     print("METRIPORT-LOG: retrieved local items", metriportUserId, clientApiKey, apiUrl, sandbox)
 
                                     let metriportHealth = MetriportHealthStoreManager(clientApiKey: clientApiKey, sandbox: sandbox, apiUrl: apiUrl)
@@ -247,7 +247,7 @@ extension SampleOrWorkout: Codable {
     // Retrieve daily values for the last 30 days for all types
     private static func fetchHistoricalData(type: HKQuantityType, queryOption: HKStatisticsOptions, interval: DateComponents, group: DispatchGroup, metriportUserId: String) {
         print("METRIPORT-LOG: fetchHistoricalData", type, metriportUserId)
-        
+
         let query = createStatisticsQuery(interval: interval, quantityType: type, options: queryOption)
 
         query.initialResultsHandler = {
@@ -305,7 +305,7 @@ extension SampleOrWorkout: Codable {
         // This listens for data that is added for the type
         query.statisticsUpdateHandler = {
             query, statistics, statisticsCollection, error in
-            
+
             let calendar = Calendar.current
             var startDate = Date()
             let tomorrow = DateComponents(day: 1)
@@ -326,7 +326,7 @@ extension SampleOrWorkout: Codable {
 
             // Each type has its own unit of measurement
             let unit = self.healthKitTypes.getUnit(quantityType: type)
-            
+
             print("METRIPORT-LOG: statisticsUpdateHandler", startDate, endDate, unit)
 
             guard let data = self.handleStatistics(results: statisticsCollection,
@@ -339,9 +339,9 @@ extension SampleOrWorkout: Codable {
             }
 
             print("METRIPORT-LOG: send data", data)
-            
+
             self.setLocalKeyValue(key: "date \(type)", val: startDate)
-            
+
             metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
         }
 
@@ -393,16 +393,16 @@ extension SampleOrWorkout: Codable {
                                   endDate: Date,
                                   queryOption: HKStatisticsOptions
     ) -> [Sample]? {
-        
+
         print("METRIPORT-LOG: handleStatistics")
-        
+
         guard let statsCollection = results else {
             print("error with stats collection")
             return nil
         }
 
 
-        
+
         let dailyData = self.getCollectionsData(statsCollection: statsCollection,
                                             startDate: startDate,
                                             endDate: endDate,
@@ -439,7 +439,7 @@ extension SampleOrWorkout: Codable {
                 }
             }
         }
-        
+
         print("METRIPORT-LOG: getCollectionsData", dailyData)
 
         return dailyData.dailyData
@@ -508,7 +508,7 @@ extension SampleOrWorkout: Codable {
             print(samples)
 
             let data = transformData(samples)
-            
+
             print(data)
 
             self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
@@ -527,9 +527,9 @@ extension SampleOrWorkout: Codable {
                 print(sample.value)
                 switch sample.value {
                     case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                    sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
+                    sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                     case HKCategoryValueSleepAnalysis.awake.rawValue:
-                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
+                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                     default:
                     break
                 }
@@ -537,18 +537,18 @@ extension SampleOrWorkout: Codable {
                 if #available(iOS 16.0, *) {
                     switch sample.value {
                         case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.source.name)
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         default:
                         break
                     }
                 }
             }
         }
-        
+
 
         return sleepData
     }
@@ -577,7 +577,7 @@ extension SampleOrWorkout: Codable {
                    }
                }
 
-                 workoutData.addWorkout(startTime: startTime, endTime: endTime, type: type, duration: duration, sourceId: workout.sourceRevision.source.bundleIdentifier, sourceName: workout.sourceRevision.source.name, kcal: kcal, distance: distance)
+                 workoutData.addWorkout(startTime: startTime, endTime: endTime, type: type, duration: duration, sourceId: workout.sourceRevision.source.bundleIdentifier, sourceName: workout.sourceRevision.productType?.description ?? "", kcal: kcal, distance: distance)
              }
          }
 
