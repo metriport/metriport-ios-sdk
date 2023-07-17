@@ -31,7 +31,7 @@ public struct MetriportWidget: UIViewRepresentable, WebViewHandlerDelegate {
         providers: [String]? = nil,
         url: String? = nil) {
             let config = WKWebViewConfiguration()
-
+            config.applicationNameForUserAgent = "Safari"
             let webView = WKWebView(frame: .zero, configuration: config)
 
             self.webView = webView
