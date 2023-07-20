@@ -198,9 +198,7 @@ extension SampleOrWorkout: Codable {
         for sampleType in cumalativeTypes {
             group.enter()
 
-           if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
-               fetchHistoricalData(type: sampleType, queryOption: .cumulativeSum, interval: interval, group: group, metriportUserId: metriportUserId)
-           }
+            fetchHistoricalData(type: sampleType, queryOption: .cumulativeSum, interval: interval, group: group, metriportUserId: metriportUserId)
 
             fetchHourly(type: sampleType, queryOption: .cumulativeSum, metriportUserId: metriportUserId)
         }
@@ -208,9 +206,7 @@ extension SampleOrWorkout: Codable {
         for sampleType in discreteTypes {
             group.enter()
 
-            if UserDefaults.standard.object(forKey: "date \(sampleType)") == nil {
-                fetchHistoricalData(type: sampleType, queryOption: .discreteAverage, interval: interval, group: group, metriportUserId: metriportUserId)
-            }
+            fetchHistoricalData(type: sampleType, queryOption: .discreteAverage, interval: interval, group: group, metriportUserId: metriportUserId)
 
             fetchHourly(type: sampleType, queryOption: .discreteAverage, metriportUserId: metriportUserId)
         }
@@ -253,6 +249,17 @@ extension SampleOrWorkout: Codable {
         query.initialResultsHandler = {
             query, results, error in
 
+            fetchData(results: results, group: group)
+        }
+
+        query.statisticsUpdateHandler = {
+            query, statistics, statisticsCollection, error in
+            if UserDefaults.standard.object(forKey: "date \(type)") == nil {
+                fetchData(results: statisticsCollection, group: nil)
+            }
+        }
+
+        func fetchData(results: Optional<HKStatisticsCollection>, group: Optional<DispatchGroup>) {
             // Set time for a month ago (last 30 days)
             let calendar = Calendar.current
             let endDate = Date()
@@ -278,13 +285,17 @@ extension SampleOrWorkout: Codable {
             // This will be used as the starting point for hourly queries
             let lastDate = data.last?.date ?? Date()
 
-            self.setLocalKeyValue(key: "date \(type)", val: lastDate)
-
-            if data.count != 0 {
+            if (!data.isEmpty) {
+                self.setLocalKeyValue(key: "date \(type)", val: lastDate)
                 self.thirtyDaySamples["\(type)"] = SampleOrWorkout.sample(data)
-            }
 
-            group.leave()
+
+                if (group != nil) {
+                    group?.leave()
+                } else {
+                    metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: false)
+                }
+            }
         }
 
         healthStore?.execute(query)
@@ -314,35 +325,36 @@ extension SampleOrWorkout: Codable {
             if let date = UserDefaults.standard.object(forKey: "date \(type)") as! Optional<Data> {
                 do {
                     startDate = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(date) as! Date
+
+                    guard let endDate = calendar.date(byAdding: tomorrow, to: Date()) else {
+                        metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
+                        fatalError("*** Unable to calculate the start date ***")
+                    }
+
+                    // Each type has its own unit of measurement
+                    let unit = self.healthKitTypes.getUnit(quantityType: type)
+
+                    print("METRIPORT-LOG: statisticsUpdateHandler", type, startDate, endDate, unit)
+
+                    guard let data = self.handleStatistics(results: statisticsCollection,
+                                                           unit: unit,
+                                                           startDate: startDate,
+                                                           endDate: endDate,
+                                                           queryOption: queryOption) else {
+                        metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics")
+                        return
+                    }
+
+                    print("METRIPORT-LOG: send data", data)
+
+                    if (!data.isEmpty) {
+                        self.setLocalKeyValue(key: "date \(type)", val: startDate)
+                        metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
+                    }
                 } catch {
                     metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to read hourly last datetime")
                 }
             }
-
-            guard let endDate = calendar.date(byAdding: tomorrow, to: Date()) else {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
-                fatalError("*** Unable to calculate the start date ***")
-            }
-
-            // Each type has its own unit of measurement
-            let unit = self.healthKitTypes.getUnit(quantityType: type)
-
-            print("METRIPORT-LOG: statisticsUpdateHandler", startDate, endDate, unit)
-
-            guard let data = self.handleStatistics(results: statisticsCollection,
-                                                   unit: unit,
-                                                   startDate: startDate,
-                                                   endDate: endDate,
-                                                   queryOption: queryOption) else {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics")
-                return
-            }
-
-            print("METRIPORT-LOG: send data", data)
-
-            self.setLocalKeyValue(key: "date \(type)", val: startDate)
-
-            metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
         }
 
         healthStore?.execute(query)
@@ -494,10 +506,12 @@ extension SampleOrWorkout: Codable {
                 return
             }
 
-            let data = transformData(samples)
+            if (!samples.isEmpty) {
+                let data = transformData(samples)
+                self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
+                self.thirtyDaySamples[samplesKey] = data
+            }
 
-            self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
-            self.thirtyDaySamples[samplesKey] = data
             group.leave()
         }
 
@@ -505,14 +519,12 @@ extension SampleOrWorkout: Codable {
             guard let samples = samplesOrNil else {
                 return
             }
-            print(samples)
 
-            let data = transformData(samples)
-
-            print(data)
-
-            self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
-            metriportApi?.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data], hourly: true)
+            if (!samples.isEmpty) {
+                let data = transformData(samples)
+                self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
+                metriportApi?.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data], hourly: true)
+            }
         }
 
         healthStore?.execute(query)
