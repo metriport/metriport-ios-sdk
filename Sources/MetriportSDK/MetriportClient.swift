@@ -248,8 +248,9 @@ extension SampleOrWorkout: Codable {
 
         query.initialResultsHandler = {
             query, results, error in
-
-            fetchData(results: results, group: group)
+            if UserDefaults.standard.object(forKey: "date \(type)") == nil {
+                fetchData(results: results, group: group)
+            }
         }
 
         query.statisticsUpdateHandler = {
@@ -288,13 +289,12 @@ extension SampleOrWorkout: Codable {
             if (!data.isEmpty) {
                 self.setLocalKeyValue(key: "date \(type)", val: lastDate)
                 self.thirtyDaySamples["\(type)"] = SampleOrWorkout.sample(data)
+            }
 
-
-                if (group != nil) {
-                    group?.leave()
-                } else {
-                    metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: false)
-                }
+            if (group != nil) {
+                group?.leave()
+            } else {
+                metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: false)
             }
         }
 
@@ -317,14 +317,18 @@ extension SampleOrWorkout: Codable {
         query.statisticsUpdateHandler = {
             query, statistics, statisticsCollection, error in
 
+            if error != nil {
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "statisticsUpdateHandler error \(error.debugDescription)")
+            }
+
             let calendar = Calendar.current
-            var startDate = Date()
+            let now = Date()
             let tomorrow = DateComponents(day: 1)
 
             // Get the last datetime specified after the 30 day fetch
             if let date = UserDefaults.standard.object(forKey: "date \(type)") as! Optional<Data> {
                 do {
-                    startDate = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(date) as! Date
+                    let startDate = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(date) as! Date
 
                     guard let endDate = calendar.date(byAdding: tomorrow, to: Date()) else {
                         metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
@@ -341,14 +345,12 @@ extension SampleOrWorkout: Codable {
                                                            startDate: startDate,
                                                            endDate: endDate,
                                                            queryOption: queryOption) else {
-                        metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics")
+                        metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics type: \(type) unit: \(unit)")
                         return
                     }
 
-                    print("METRIPORT-LOG: send data", data)
-
                     if (!data.isEmpty) {
-                        self.setLocalKeyValue(key: "date \(type)", val: startDate)
+                        self.setLocalKeyValue(key: "date \(type)", val: now)
                         metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
                     }
                 } catch {
@@ -364,21 +366,9 @@ extension SampleOrWorkout: Codable {
     private static func createStatisticsQuery(interval: DateComponents, quantityType: Optional<HKQuantityType>, options: HKStatisticsOptions) -> HKStatisticsCollectionQuery {
         let calendar = Calendar.current
 
-
-        let components = DateComponents(calendar: calendar,
-                                        timeZone: calendar.timeZone,
-                                        hour: 12,
-                                        minute: 0,
-                                        second: 0,
-                                        weekday: 1)
-
         // This creates the anchor point to fetch data in intervals from
         // We are setting it to monnday at midnight above
-        guard let anchorDate = calendar.nextDate(after: Date(),
-                                                 matching: components,
-                                                 matchingPolicy: .nextTime,
-                                                 repeatedTimePolicy: .first,
-                                                 direction: .backward) else {
+        guard let anchorDate = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) else {
             fatalError("*** unable to find the previous Monday. ***")
         }
 
@@ -409,7 +399,7 @@ extension SampleOrWorkout: Codable {
         print("METRIPORT-LOG: handleStatistics")
 
         guard let statsCollection = results else {
-            print("error with stats collection")
+            metriportApi?.sendError(metriportUserId: "unknown", error: "Error with stats collection")
             return nil
         }
 
