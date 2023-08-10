@@ -16,7 +16,6 @@ class MetriportApi {
     // Encode the data and strigify payload to be able to send as JSON
     // Data is structured as [ "TYPE ie HeartRate": [ARRAY OF SAMPLES]]
     public func sendData(metriportUserId: String, samples: [ String: SampleOrWorkout ], hourly: Bool? = nil) {
-        print("METRIPORT-LOG: sendData")
         var stringifyPayload: String = ""
 
         do {
@@ -29,39 +28,46 @@ class MetriportApi {
             print("Couldnt write files")
         }
 
-        makeRequest(metriportUserId: metriportUserId, payload: stringifyPayload, hourly: hourly)
-    }
-
-    public func sendError(metriportUserId: String, error: String) {
-        do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(["error": error])
-
-            makeRequest(metriportUserId: metriportUserId, payload: String(data: data, encoding: .utf8)!)
-        } catch {
-            print("Couldnt make request")
-        }
-    }
-
-    // Send data to the api
-    private func makeRequest(metriportUserId: String, payload: String, hourly: Bool? = nil) {
-
-        print("METRIPORT-LOG: makeRequest")
-
         var bodyData = try? JSONSerialization.data(
-            withJSONObject: ["metriportUserId": metriportUserId, "data": payload]
+            withJSONObject: ["metriportUserId": metriportUserId, "data": stringifyPayload]
         )
 
         if hourly != nil {
             bodyData = try? JSONSerialization.data(
-                withJSONObject: ["metriportUserId": metriportUserId, "data": payload, "hourly": hourly ?? false]
+                withJSONObject: ["metriportUserId": metriportUserId, "data": stringifyPayload, "hourly": hourly ?? false]
             )
         }
 
+        makeRequest(payload: bodyData, hourly: hourly)
+    }
+
+    public func sendError(metriportUserId: String, error: String, extra: [String: String]? = nil) {
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let encodedExtra = try encoder.encode(extra)
+            let data = try encoder.encode([
+                "error": error,
+                "extra": String(data: encodedExtra, encoding: .utf8)!
+            ])
+
+            var payload = try? JSONSerialization.data(
+                withJSONObject: ["metriportUserId": metriportUserId, "data": String(data: data, encoding: .utf8)!]
+            )
+
+            makeRequest(payload: payload)
+        } catch {
+            print("Couldnt make request")
+
+        }
+
+    }
+
+    // Send data to the api
+    private func makeRequest(payload: Data? = nil, hourly: Bool? = nil) {
         var request = URLRequest(url: URL(string: "\(self.apiUrl)/webhook/apple")!)
         request.httpMethod = "POST"
-        request.httpBody = bodyData
+        request.httpBody = payload
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue(self.clientApiKey, forHTTPHeaderField: "x-api-key")
         let failedPayloadsKey = "failedPayloads"
@@ -75,9 +81,9 @@ class MetriportApi {
             if (200 ... 299) ~= response.statusCode {
                 if let failedPayloads = UserDefaults.standard.object(forKey: failedPayloadsKey) as! Optional<Data> {
                     do {
-                        let payloads = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(failedPayloads) as! [String]
+                        let payloads = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(failedPayloads) as! [Data]
                         for failedPayload in payloads {
-                            self.makeRequest(metriportUserId: metriportUserId, payload: failedPayload)
+                            self.makeRequest(payload: failedPayload)
                         }
                         UserDefaults.standard.removeObject(forKey: failedPayloadsKey)
                     } catch {
@@ -85,11 +91,11 @@ class MetriportApi {
                     }
                 }
             } else {
-                var payloads: [String] = []
+                var payloads: [Data?] = []
 
                 if let failedPayloads = UserDefaults.standard.object(forKey: failedPayloadsKey) as! Optional<Data> {
                     do {
-                        payloads = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(failedPayloads) as! [String]
+                        payloads = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(failedPayloads) as! [Data]
                     } catch {
                         print("Couldnt read object")
                     }
@@ -103,13 +109,9 @@ class MetriportApi {
                     print("Couldnt write files")
                 }
 
-                print("statusCode should be 2xx, but is \(response.statusCode)")
-                print("response = \(response)")
                 return
             }
         }
-
-        print("METRIPORT-LOG: request sent")
 
         task.resume()
     }
