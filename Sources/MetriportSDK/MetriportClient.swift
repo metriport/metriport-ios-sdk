@@ -170,11 +170,7 @@ extension SampleOrWorkout: Codable {
           healthStore?.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { (success, failure) in
           guard failure == nil && success else {
 
-              metriportApi?.sendError(
-                metriportUserId: metriportUserId,
-                error: "Error enabling background delivery",
-                extra: ["sample": "\(sampleType)", "desc": "\(failure.debugDescription)"]
-              )
+              metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error enabling background delivery", extra: ["sample": "\(sampleType)", "desc": "\(failure.debugDescription)"])
             return
           }
         }
@@ -246,7 +242,7 @@ extension SampleOrWorkout: Codable {
         query.initialResultsHandler = {
             query, results, error in
             if error != nil {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "historical statisticsInitHandler", extra: ["type": "\(type)", "error": "\(error.debugDescription)"])
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "historical statisticsInitHandler", extra: ["type": "\(type)", "message": "\(error.debugDescription)"])
             }
 
             if UserDefaults.standard.object(forKey: "date \(type)") == nil {
@@ -257,7 +253,7 @@ extension SampleOrWorkout: Codable {
         query.statisticsUpdateHandler = {
             query, statistics, statisticsCollection, error in
             if error != nil {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "historical statisticsUpdateHandler", extra: ["type": "\(type)", "error": "\(error.debugDescription)"])
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "historical statisticsUpdateHandler", extra: ["type": "\(type)", "message": "\(error.debugDescription)"])
             }
 
             if UserDefaults.standard.object(forKey: "date \(type)") == nil {
@@ -283,7 +279,11 @@ extension SampleOrWorkout: Codable {
                                                    startDate: startDate,
                                                    endDate: endDate,
                                                    queryOption: queryOption) else {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle historical statistics ", extra: ["type": "\(type)", "start": "\(startDate)", "end": "\(endDate)"])
+                metriportApi?.sendError(
+                    metriportUserId: metriportUserId,
+                    error: "Error unable to handle historical statistics ",
+                    extra: ["type": "\(type)", "start": "\(startDate)", "end": "\(endDate)"]
+                )
                 return
             }
 
@@ -327,7 +327,7 @@ extension SampleOrWorkout: Codable {
             query, statistics, statisticsCollection, error in
 
             if error != nil {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "hourly statisticsUpdateHandler", extra: ["type": "\(type)", "error": "\(error.debugDescription)"])
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "blah blah blah", extra: ["type": "\(type)", "message": "\(error.debugDescription)"])
             }
 
             let calendar = Calendar.current
