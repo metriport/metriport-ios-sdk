@@ -327,7 +327,7 @@ extension SampleOrWorkout: Codable {
             query, statistics, statisticsCollection, error in
 
             if error != nil {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "blah blah blah", extra: ["type": "\(type)", "message": "\(error.debugDescription)"])
+                metriportApi?.sendError(metriportUserId: metriportUserId, error: "statisticsUpdateHandler error", extra: ["type": "\(type)", "message": "\(error.debugDescription)"])
             }
 
             let calendar = Calendar.current
