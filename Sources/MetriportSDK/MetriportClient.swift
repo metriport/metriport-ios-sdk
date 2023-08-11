@@ -312,56 +312,90 @@ extension SampleOrWorkout: Codable {
     }
 
     private static func fetchHourly(type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
-        // Aggregate data for an hour
-        let interval = DateComponents(hour: 1)
+        let calendar = Calendar.current
+        let endDate = Date()
+        let oneMonthAgo = DateComponents(day: -30)
+        guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
+            fatalError("*** Unable to calculate the start date ***")
+        }
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
 
-        let query = createStatisticsQuery(interval: interval, quantityType: type, options: queryOption)
+        var anchor = HKQueryAnchor.init(fromValue: 0)
+        let anchorKey = "\(type) anchor"
+        let hasAnchorKey = UserDefaults.standard.object(forKey: anchorKey) != nil
 
-        // We dont initially fetch data for the hours
-        query.initialResultsHandler = {
-            query, results, error in
+        if hasAnchorKey {
+            let data = UserDefaults.standard.object(forKey: anchorKey) as! Data
+            do {
+                anchor = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data) as! HKQueryAnchor
+            } catch {
+                print("Unable to retrieve an anchor")
+            }
         }
 
-        // This listens for data that is added for the type
-        query.statisticsUpdateHandler = {
-            query, statistics, statisticsCollection, error in
-
-            if error != nil {
-                metriportApi?.sendError(metriportUserId: metriportUserId, error: "statisticsUpdateHandler error", extra: ["type": "\(type)", "message": "\(error.debugDescription)"])
+        let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
+            guard let samples = samplesOrNil else {
+                return
             }
 
-            let calendar = Calendar.current
-            let now = Date()
-            let tomorrow = DateComponents(day: 1)
+            if hasAnchorKey && !samples.isEmpty {
+                self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
+                handleSamples(samples: samples, type: type, queryOption: queryOption, metriportUserId: metriportUserId)
+            }
+        }
 
-            // Get the last datetime specified after the 30 day fetch
-            if let date = UserDefaults.standard.object(forKey: "date \(type)") as! Optional<Data> {
-                do {
-                    let startDate = try NSKeyedUnarchiver.unarchiveTopLevelObjectWithData(date) as! Date
+        query.updateHandler = { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) in
+            guard let samples = samplesOrNil else {
+                return
+            }
 
-                    guard let endDate = calendar.date(byAdding: tomorrow, to: Date()) else {
-                        metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to calculate the hourly start date")
-                        fatalError("*** Unable to calculate the start date ***")
-                    }
+            if (!samples.isEmpty) {
+                self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
+                handleSamples(samples: samples, type: type, queryOption: queryOption, metriportUserId: metriportUserId)
+            }
+        }
 
-                    // Each type has its own unit of measurement
-                    let unit = self.healthKitTypes.getUnit(quantityType: type)
+        healthStore?.execute(query)
+    }
 
-                    guard let data = self.handleStatistics(results: statisticsCollection,
-                                                           unit: unit,
-                                                           startDate: startDate,
-                                                           endDate: endDate,
-                                                           queryOption: queryOption) else {
-                        metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to handle hourly statistics", extra: ["type": "\(type)", "unit": "\(unit)", "start": "\(startDate)", "end": "\(endDate)"])
-                        return
-                    }
+    static func handleSamples(samples: [HKSample], type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) -> MyWorkoutData {
+       let workoutData = MyWorkoutData()
 
-                    if (!data.isEmpty) {
-                        self.setLocalKeyValue(key: "date \(type)", val: now)
-                        metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
-                    }
-                } catch {
-                    metriportApi?.sendError(metriportUserId: metriportUserId, error: "Error unable to read hourly last datetime")
+        for result in samples {
+            queryStatistic(sample: result, type: type, queryOption: queryOption, metriportUserId: metriportUserId)
+        }
+
+       return workoutData
+   }
+
+    static func queryStatistic(sample: HKSample, type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
+        let hour = Calendar.current.component(.hour, from: sample.startDate)
+        let startTime = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: sample.startDate)!
+        let endTime = Calendar.current.date(bySettingHour: hour, minute: 59, second: 59, of: sample.startDate)!
+
+
+        let today = HKQuery.predicateForSamples(withStart: startTime, end: endTime, options: [])
+
+        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: today, options: queryOption) { (query, statisticsOrNil, errorOrNil) in
+            guard let statistics = statisticsOrNil else {
+                // Handle any errors here.
+                return
+            }
+
+            let unit = self.healthKitTypes.getUnit(quantityType: type)
+
+            if let quantity = self.getSumOrAvgQuantity(statistics: statistics, queryOption: queryOption) {
+                let date = statistics.startDate
+                let compatible = quantity.is(compatibleWith: unit)
+
+                if compatible {
+                    let value = quantity.doubleValue(for: unit)
+
+                    let day = Sample(date: date, value: Int(value))
+                    metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample([day])], hourly: true)
+                } else {
+                    print(quantity)
+                    print(unit)
                 }
             }
         }
@@ -484,8 +518,9 @@ extension SampleOrWorkout: Codable {
 
         var anchor = HKQueryAnchor.init(fromValue: 0)
         let anchorKey = "\(type) anchor"
+        let hasAnchorKey = UserDefaults.standard.object(forKey: anchorKey) != nil
 
-        if UserDefaults.standard.object(forKey: anchorKey) != nil {
+        if hasAnchorKey {
             let data = UserDefaults.standard.object(forKey: anchorKey) as! Data
             do {
                 anchor = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data) as! HKQueryAnchor
@@ -502,7 +537,12 @@ extension SampleOrWorkout: Codable {
             if (!samples.isEmpty) {
                 let data = transformData(samples)
                 self.setLocalKeyValue(key: anchorKey, val: newAnchor!)
-                self.thirtyDaySamples[samplesKey] = data
+
+                if (hasAnchorKey) {
+                    metriportApi?.sendData(metriportUserId: metriportUserId, samples: [samplesKey : data], hourly: true)
+                } else {
+                    self.thirtyDaySamples[samplesKey] = data
+                }
             }
 
             group.leave()
@@ -593,3 +633,5 @@ extension Date {
         return lhs.timeIntervalSinceReferenceDate - rhs.timeIntervalSinceReferenceDate
     }
 }
+
+
