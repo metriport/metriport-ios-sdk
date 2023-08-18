@@ -36,7 +36,7 @@ struct WorkoutSample: Codable {
 class MySleepData: ObservableObject {
     var sleepData: [Sample] = []
 
-    public func addSample(startTime: Date, endTime: Date, type: String, value: Int, sourceId: String, sourceName: String) {
+    public func addSample(startTime: Date, endTime: Date, type: String, value: Double, sourceId: String, sourceName: String) {
         let sample = Sample(date: startTime,value: value, type: type, endDate: endTime, sourceId: sourceId, sourceName: sourceName)
         self.sleepData.append(sample)
     }
@@ -45,7 +45,7 @@ class MySleepData: ObservableObject {
 class MyDailyData: ObservableObject {
     var dailyData: [Sample] = []
 
-    public func addDay(date: Date, value: Int) {
+    public func addDay(date: Date, value: Double) {
         let day = Sample(date: date, value: value)
         self.dailyData.append(day)
     }
@@ -53,7 +53,7 @@ class MyDailyData: ObservableObject {
 
 struct Sample: Codable {
     var date: Date
-    var value: Int
+    var value: Double
     var type: String?
     var endDate: Date?
     var sourceId: String?
@@ -243,10 +243,13 @@ extension SampleOrWorkout: Codable {
             query, results, error in
             if error != nil {
                 metriportApi?.sendError(metriportUserId: metriportUserId, error: "historical statisticsInitHandler", extra: ["type": "\(type)", "message": "\(error.debugDescription)"])
+                group.leave()
             }
 
             if UserDefaults.standard.object(forKey: "date \(type)") == nil {
                 fetchData(results: results, group: group)
+            } else {
+                group.leave()
             }
         }
 
@@ -312,14 +315,6 @@ extension SampleOrWorkout: Codable {
     }
 
     private static func fetchHourly(type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
-        let calendar = Calendar.current
-        let endDate = Date()
-        let oneMonthAgo = DateComponents(day: -30)
-        guard let startDate = calendar.date(byAdding: oneMonthAgo, to: endDate) else {
-            fatalError("*** Unable to calculate the start date ***")
-        }
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
-
         var anchor = HKQueryAnchor.init(fromValue: 0)
         let anchorKey = "\(type) anchor"
         let hasAnchorKey = UserDefaults.standard.object(forKey: anchorKey) != nil
@@ -333,7 +328,7 @@ extension SampleOrWorkout: Codable {
             }
         }
 
-        let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
+        let query = HKAnchoredObjectQuery(type: type, predicate: nil, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
             guard let samples = samplesOrNil else {
                 return
             }
@@ -389,9 +384,9 @@ extension SampleOrWorkout: Codable {
                 let compatible = quantity.is(compatibleWith: unit)
 
                 if compatible {
-                    let value = quantity.doubleValue(for: unit)
+                    let value = round(1000 * quantity.doubleValue(for: unit)) / 1000
 
-                    let day = Sample(date: date, value: Int(value))
+                    let day = Sample(date: date, value: value)
                     metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample([day])], hourly: true)
                 } else {
                     print(quantity)
@@ -470,10 +465,10 @@ extension SampleOrWorkout: Codable {
                 let compatible = quantity.is(compatibleWith: unit)
 
                 if compatible {
-                    let value = quantity.doubleValue(for: unit)
+                    let value = round(1000 * quantity.doubleValue(for: unit)) / 1000
 
                     // Extract each day's data.
-                    dailyData.addDay(date: date, value: Int(value))
+                    dailyData.addDay(date: date, value: value)
                 } else {
                     print(quantity)
                     print(unit)
@@ -531,6 +526,7 @@ extension SampleOrWorkout: Codable {
 
         let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
             guard let samples = samplesOrNil else {
+                group.leave()
                 return
             }
 
@@ -570,9 +566,9 @@ extension SampleOrWorkout: Codable {
             if let sample = item as? HKCategorySample {
                 switch sample.value {
                     case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                    sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                    sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                     case HKCategoryValueSleepAnalysis.awake.rawValue:
-                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                     default:
                     break
                 }
@@ -580,11 +576,11 @@ extension SampleOrWorkout: Codable {
                 if #available(iOS 16.0, *) {
                     switch sample.value {
                         case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: Int(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         default:
                         break
                     }
