@@ -384,7 +384,7 @@ extension SampleOrWorkout: Codable {
                 let compatible = quantity.is(compatibleWith: unit)
 
                 if compatible {
-                    let value = quantity.doubleValue(for: unit)
+                    let value = round(1000 * quantity.doubleValue(for: unit)) / 1000
 
                     let day = Sample(date: date, value: value)
                     metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample([day])], hourly: true)
@@ -465,7 +465,7 @@ extension SampleOrWorkout: Codable {
                 let compatible = quantity.is(compatibleWith: unit)
 
                 if compatible {
-                    let value = quantity.doubleValue(for: unit)
+                    let value = round(1000 * quantity.doubleValue(for: unit)) / 1000
 
                     // Extract each day's data.
                     dailyData.addDay(date: date, value: value)
@@ -566,9 +566,9 @@ extension SampleOrWorkout: Codable {
             if let sample = item as? HKCategorySample {
                 switch sample.value {
                     case HKCategoryValueSleepAnalysis.inBed.rawValue:
-                    sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: sample.endDate - sample.startDate, sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                    sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "inBed", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                     case HKCategoryValueSleepAnalysis.awake.rawValue:
-                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: sample.endDate - sample.startDate, sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                        sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "awake", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                     default:
                     break
                 }
@@ -576,11 +576,11 @@ extension SampleOrWorkout: Codable {
                 if #available(iOS 16.0, *) {
                     switch sample.value {
                         case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: sample.endDate - sample.startDate, sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "rem", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         case HKCategoryValueSleepAnalysis.asleepCore.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: sample.endDate - sample.startDate, sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "core", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: sample.endDate - sample.startDate, sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
+                            sleepData.addSample(startTime: sample.startDate, endTime: sample.endDate, type: "deep", value: round(sample.endDate - sample.startDate), sourceId: sample.sourceRevision.source.bundleIdentifier, sourceName: sample.sourceRevision.productType?.description ?? "")
                         default:
                         break
                     }
