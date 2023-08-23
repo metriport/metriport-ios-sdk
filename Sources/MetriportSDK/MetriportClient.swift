@@ -400,7 +400,8 @@ extension SampleOrWorkout: Codable {
         interval.hour = 1
 
         let calendar = Calendar.current
-        let anchorDate = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: startDate)
+        let hour = Calendar.current.component(.hour, from: startDate)
+        let anchorDate = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: startDate)
 
         let query = HKStatisticsCollectionQuery.init(quantityType: type,
                                                      quantitySamplePredicate: nil,
