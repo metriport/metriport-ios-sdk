@@ -284,7 +284,7 @@ extension SampleOrWorkout: Codable {
                                                    queryOption: queryOption) else {
                 metriportApi?.sendError(
                     metriportUserId: metriportUserId,
-                    error: "Error unable to handle historical statistics ",
+                    error: "Error unable to handle historical statistics",
                     extra: ["type": "\(type)", "start": "\(startDate)", "end": "\(endDate)"]
                 )
                 return
@@ -330,6 +330,11 @@ extension SampleOrWorkout: Codable {
 
         let query = HKAnchoredObjectQuery(type: type, predicate: nil, anchor: anchor, limit: HKObjectQueryNoLimit) { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) -> Void in
             guard let samples = samplesOrNil else {
+                metriportApi?.sendError(
+                    metriportUserId: metriportUserId,
+                    error: "No samples for hourly data",
+                    extra: ["type": "\(type)"]
+                )
                 return
             }
 
@@ -341,6 +346,11 @@ extension SampleOrWorkout: Codable {
 
         query.updateHandler = { (query, samplesOrNil, deletedObjectsOrNil, newAnchor, errorOrNil) in
             guard let samples = samplesOrNil else {
+                metriportApi?.sendError(
+                    metriportUserId: metriportUserId,
+                    error: "No samples for update hourly data",
+                    extra: ["type": "\(type)"]
+                )
                 return
             }
 
@@ -353,46 +363,64 @@ extension SampleOrWorkout: Codable {
         healthStore?.execute(query)
     }
 
-    static func handleSamples(samples: [HKSample], type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) -> MyWorkoutData {
-       let workoutData = MyWorkoutData()
-
-        for result in samples {
-            queryStatistic(sample: result, type: type, queryOption: queryOption, metriportUserId: metriportUserId)
+    static func handleSamples(samples: [HKSample], type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
+        guard let maxValue = samples.max(by: {(sample1, sample2)-> Bool in
+                return sample1.endDate < sample2.endDate
+            }
+        ) else {
+            metriportApi?.sendError(
+                metriportUserId: metriportUserId,
+                error: "No max value for samples",
+                extra: ["type": "\(type)"]
+            )
+            return
         }
 
-       return workoutData
+        guard let minValue = samples.min(by: {(sample1, sample2)-> Bool in
+                return sample1.startDate < sample2.startDate
+            }
+        ) else {
+            metriportApi?.sendError(
+                metriportUserId: metriportUserId,
+                error: "No min value for samples",
+                extra: ["type": "\(type)"]
+            )
+            return
+        }
+
+
+        queryStatistic(startDate: minValue.startDate, endDate: maxValue.endDate, type: type, queryOption: queryOption, metriportUserId: metriportUserId)
    }
 
-    static func queryStatistic(sample: HKSample, type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
-        let hour = Calendar.current.component(.hour, from: sample.startDate)
-        let startTime = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: sample.startDate)!
-        let endTime = Calendar.current.date(bySettingHour: hour, minute: 59, second: 59, of: sample.startDate)!
 
 
-        let today = HKQuery.predicateForSamples(withStart: startTime, end: endTime, options: [])
 
-        let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: today, options: queryOption) { (query, statisticsOrNil, errorOrNil) in
-            guard let statistics = statisticsOrNil else {
-                // Handle any errors here.
-                return
-            }
+    static func queryStatistic(startDate: Date, endDate: Date, type: HKQuantityType, queryOption: HKStatisticsOptions, metriportUserId: String) {
+        var interval = DateComponents()
+        interval.hour = 1
+
+        let calendar = Calendar.current
+        let anchorDate = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: startDate)
+
+        let query = HKStatisticsCollectionQuery.init(quantityType: type,
+                                                     quantitySamplePredicate: nil,
+                                                     options: queryOption,
+                                                     anchorDate: anchorDate!,
+                                                     intervalComponents: interval)
+
+        query.initialResultsHandler = {
+            query, results, error in
 
             let unit = self.healthKitTypes.getUnit(quantityType: type)
-
-            if let quantity = self.getSumOrAvgQuantity(statistics: statistics, queryOption: queryOption) {
-                let date = statistics.startDate
-                let compatible = quantity.is(compatibleWith: unit)
-
-                if compatible {
-                    let value = round(1000 * quantity.doubleValue(for: unit)) / 1000
-
-                    let day = Sample(date: date, value: value)
-                    metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample([day])], hourly: true)
-                } else {
-                    print(quantity)
-                    print(unit)
-                }
+            guard let data = self.handleStatistics(results: results, unit: unit, startDate: startDate, endDate: endDate, queryOption: queryOption) else {
+                metriportApi?.sendError(
+                    metriportUserId: metriportUserId,
+                    error: "Error unable to handle hourly statistics",
+                    extra: ["type": "\(type)", "start": "\(startDate)", "end": "\(endDate)"]
+                )
+                return
             }
+            metriportApi?.sendData(metriportUserId: metriportUserId, samples: ["\(type)" : SampleOrWorkout.sample(data)], hourly: true)
         }
 
         healthStore?.execute(query)
